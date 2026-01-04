@@ -1,0 +1,73 @@
+// Global styles
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #e0e0e0;
+  background-color: #1a1a1a;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+// Color variables
+$bg-primary: #1a1a1a;
+$bg-secondary: #232323;
+$bg-tertiary: #2d2d2d;
+$text-primary: #e0e0e0;
+$text-secondary: #aaa;
+$accent-color: #4a9eff;
+$success-color: #4caf50;
+$error-color: #f44336;
+$border-color: #333;
+
+// Layout
+.layout {
+  display: flex;
+  height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+// App Header
+.app-header {
+  height: 32px;
+  background-color: $bg-secondary;
+  display: flex;
+  align-items: center;
+  z-index: 100;
+  padding-left: 80px;
+}
+
+.header-content {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 80px;
+}
+
+.connection-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: $bg-tertiary;
+  padding: 2px 12px;
+  border-radius: 12px;
+  border: 1px solid #444;
+  transition: all 0.3s ease;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background-color: $success-color;
+  border-radius: 50%;
+}
+
+.url-text {
+  font-size: 0.75rem;
+  color: $text-secondary;
+}
