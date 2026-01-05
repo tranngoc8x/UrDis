@@ -1,5 +1,4 @@
 <script>
-  import { invoke } from "@tauri-apps/api/core";
   import { goto } from "$app/navigation";
   import { activeConfig, savedServers } from "$lib/stores.js";
   import { resizeWindow } from "$lib/utils.js";
@@ -94,6 +93,7 @@
     isError = false;
 
     try {
+      const { invoke } = await import("@tauri-apps/api/core");
       redisStatus = await invoke("connect_redis", { config });
       if (redisStatus.startsWith("Successfully")) {
         isError = false;
@@ -289,6 +289,6 @@
   </div>
 {/if}
 
-<style>
-  @import "./login.css";
+<style lang="scss">
+  @import "./login.scss";
 </style>
