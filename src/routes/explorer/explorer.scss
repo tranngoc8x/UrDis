@@ -269,8 +269,8 @@ $border-color: #333;
   font-size: 0.85rem;
   border-radius: 4px;
   cursor: pointer;
-  white-space: normal; /* Allow wrapping */
-  word-break: break-all; /* Break long words */
+  white-space: nowrap; /* Keep on single line */
+  overflow: hidden;
   transition: background-color 0.2s, color 0.2s;
 
   &:hover {
@@ -309,7 +309,7 @@ $border-color: #333;
     }
 
     &.tag-string {
-      background-color: #3b82f6; // Blue-500
+      background-color: #10b981; // Emerald-500
     }
 
     &.tag-hash {
@@ -648,14 +648,14 @@ $border-color: #333;
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.865rem 1rem;
+  padding: 0.9rem 1rem;
   margin: -1.5rem -1.5rem 1rem -1.5rem; // Offset parent padding
   background-color: $bg-secondary;
   border-bottom: 1px solid $border-color;
 
   h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.75rem;
     color: $text-primary;
     word-break: break-all;
   }
@@ -674,7 +674,7 @@ $border-color: #333;
   background-color: $bg-tertiary;
 
   &.tag-string {
-    background-color: #3b82f6; // Blue-500
+    background-color: #10b981; // Emerald-500
   }
 
   &.tag-hash {

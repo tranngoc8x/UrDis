@@ -150,12 +150,32 @@
   }
 
   async function selectKey(key) {
+    if (selectedKey === key) return;
+
     selectedKey = key;
-    keyValue = { type: null, value: null };
+    const cacheKey = `${selectedDb}:${key}`;
+
+    // Check cache first for instant feedback
+    if (valueCache.has(cacheKey)) {
+      keyValue = valueCache.get(cacheKey);
+    } else {
+      keyValue = { type: null, value: null };
+    }
+
     const config = $activeConfig;
     if (!config) return;
+
     try {
-      keyValue = await invoke("get_key_value", { config, key, db: selectedDb });
+      const result = await invoke("get_key_value", {
+        config,
+        key,
+        db: selectedDb,
+      });
+      // Update cache and current view
+      valueCache.set(cacheKey, result);
+      if (selectedKey === key) {
+        keyValue = result;
+      }
     } catch (error) {
       console.error("Failed to fetch key value:", error);
     }
@@ -166,6 +186,7 @@
     keysList = [];
     selectedKey = "";
     keyValue = { type: null, value: null };
+    valueCache.clear();
     await resizeWindow(800, 600);
     goto("/login");
   }
@@ -176,6 +197,7 @@
     selectedKey = "";
     keyValue = { type: null, value: null };
     expandedFolders = new Set();
+    valueCache.clear(); // Clear cache when switching DBs
     await fetchKeys();
   }
 
@@ -260,7 +282,7 @@
           class:selected={selectedKey === node.fullPath}
           onclick={() => selectKey(node.fullPath)}
         >
-          <span class="tree-tag tag-key"
+          <span class="tree-tag tag-{(node.key_type || 'key').toLowerCase()}"
             >{(node.key_type || "KEY").toUpperCase()}</span
           >
           <span class="name">{node.name}</span>
@@ -444,12 +466,12 @@
   <main class="value-panel" use:simplebar data-simplebar>
     {#if selectedKey}
       <div class="value-header">
-        <h2>{selectedKey}</h2>
         {#if keyValue?.type}
           <span class="type-badge tag-{keyValue.type.toLowerCase()}"
             >{keyValue.type}</span
           >
         {/if}
+        <h2>{selectedKey}</h2>
       </div>
       <div class="value-content">
         {#if keyValue?.value !== null}
