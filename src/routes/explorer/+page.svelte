@@ -278,9 +278,9 @@
 <div class="layout">
   <aside class="sidebar sidebar-explorer" style="width: {sidebarWidth}px">
     <div class="sidebar-header">
-      <div class="header-top">
+      <!-- <div class="header-top">
         <h3>Keys ({filteredKeys.length})</h3>
-      </div>
+      </div> -->
       <div class="search-row">
         <div class="search-box">
           <input
@@ -289,6 +289,31 @@
             bind:value={searchInput}
             onkeydown={handleSearch}
           />
+          {#if searchInput}
+            <button
+              class="btn-clear-search"
+              onclick={() => {
+                searchInput = "";
+                executeSearch();
+              }}
+              title="Clear search"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          {/if}
         </div>
         <button
           class="btn-action refresh"
@@ -421,7 +446,9 @@
       <div class="value-header">
         <h2>{selectedKey}</h2>
         {#if keyValue?.type}
-          <span class="type-badge">{keyValue.type}</span>
+          <span class="type-badge tag-{keyValue.type.toLowerCase()}"
+            >{keyValue.type}</span
+          >
         {/if}
       </div>
       <div class="value-content">

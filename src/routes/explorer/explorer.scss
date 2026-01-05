@@ -204,6 +204,7 @@ $border-color: #333;
   padding: 0.3rem 0.6rem;
   border: 1px solid transparent;
   transition: border-color 0.2s;
+  position: relative;
 
   &:focus-within {
     border-color: rgba($accent-color, 0.5);
@@ -215,6 +216,7 @@ $border-color: #333;
     border: none;
     color: $text-primary;
     font-size: 0.85rem;
+    padding-right: 1.5rem; // Space for clear button
 
     &:focus {
       outline: none;
@@ -223,6 +225,28 @@ $border-color: #333;
     &::placeholder {
       color: $text-secondary;
     }
+  }
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: rgba($text-secondary, 0.3);
+  border: none;
+  border-radius: 50%;
+  color: $text-secondary;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba($text-secondary, 0.5);
+    color: $text-primary;
   }
 }
 
@@ -624,23 +648,58 @@ $border-color: #333;
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  padding: 0.865rem 1rem;
+  margin: -1.5rem -1.5rem 1rem -1.5rem; // Offset parent padding
+  background-color: $bg-secondary;
+  border-bottom: 1px solid $border-color;
 
   h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: $text-primary;
     word-break: break-all;
   }
 }
 
 .type-badge {
-  padding: 0.25rem 0.5rem;
-  background-color: $accent-color;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.55rem;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: center;
   color: white;
-  border-radius: 4px;
-  font-size: 0.75rem;
   text-transform: uppercase;
+  background-color: $bg-tertiary;
+
+  &.tag-string {
+    background-color: #3b82f6; // Blue-500
+  }
+
+  &.tag-hash {
+    background-color: #a855f7; // Purple-500
+  }
+
+  &.tag-list {
+    background-color: #06b6d4; // Cyan-500
+  }
+
+  &.tag-set {
+    background-color: #f59e0b; // Amber-500
+  }
+
+  &.tag-zset {
+    background-color: #ec4899; // Pink-500
+  }
+
+  &.tag-stream {
+    background-color: #f43f5e; // Rose-500
+  }
+
+  &.tag-none {
+    background-color: #94a3b8; // Slate-400
+  }
 }
 
 .value-content {
