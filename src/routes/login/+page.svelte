@@ -3,16 +3,7 @@
   import { onMount } from "svelte";
   import { activeConfig, savedServers } from "$lib/stores.js";
   import { resizeWindow } from "$lib/utils.js";
-  import SimpleBar from "simplebar";
-  import "simplebar/dist/simplebar.css";
-
-  let serverListElement;
-
-  onMount(() => {
-    if (serverListElement) {
-      new SimpleBar(serverListElement);
-    }
-  });
+  import { simplebar } from "$lib/actions.js";
 
   let redisHost = $state("");
   let redisPort = $state("");
@@ -182,7 +173,7 @@
           No saved servers. Click "+ New Redis Server" to add one.
         </div>
       {:else}
-        <div class="server-list" bind:this={serverListElement}>
+        <div class="server-list" use:simplebar>
           {#each $savedServers as server, index}
             <div class="server-item">
               <div class="server-info">

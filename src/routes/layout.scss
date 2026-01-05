@@ -70,3 +70,53 @@ html, body {
 
 
 
+
+// Shared SimpleBar overrides for both sidebar and value panel
+%custom-scrollbar {
+  // Ensure the wrapper hides native bars & takes full space
+  :global(.simplebar-content-wrapper) {
+    height: 100%;
+    width: 100%;
+    // Standard hiding
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    
+    // Webkit hiding
+    &::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+      background: transparent;
+    }
+  }
+
+  // Track Style
+  :global(.simplebar-track.simplebar-vertical) {
+    width: 14px;
+    background-color: #1a1a1a;
+    border-left: 1px solid #333;
+    z-index: 50;
+  }
+  
+  :global(.simplebar-track.simplebar-horizontal) {
+    display: none;
+  }
+
+  // Thumb Style
+  :global(.simplebar-scrollbar:before) {
+    background-color: #666;
+    border-radius: 4px;
+    opacity: 0.8;
+    left: 4px; right: 0px; top: 2px; bottom: 2px;
+    transition: opacity 0.2s, background-color 0.2s;
+  }
+
+  :global(.simplebar-scrollbar.simplebar-visible:before) {
+    opacity: 1;
+  }
+  
+  :global(.simplebar-scrollbar:hover:before) {
+    background-color: #aaa;
+    opacity: 1;
+  }
+}
