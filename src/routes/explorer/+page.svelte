@@ -7,9 +7,12 @@
   import SimpleBar from "simplebar";
   import "simplebar/dist/simplebar.css";
 
+  // State Management
   let keysList = $state([]);
   let selectedKey = $state("");
   let keyValue = $state({ type: null, value: null });
+  let valueCache = new Map(); // Cache for near-instant display
+
   let searchInput = $state("");
   let activePattern = $state("");
   let selectedDb = $state(0);
@@ -21,13 +24,13 @@
   let currentCursor = $state(0);
   let isScanning = $state(true);
 
+  let valueLoadingTimeout;
+  let isLoadingValue = $state(false);
+
   // Svelte action for SimpleBar
   /** @param {HTMLElement} node */
   function simplebar(node, options = { autoHide: false }) {
-    console.log("SimpleBar init on node:", node);
     const sb = new SimpleBar(node, options);
-
-    // Auto-recalculate when content changes
     const observer = new MutationObserver(() => sb.recalculate());
     observer.observe(node, {
       childList: true,
@@ -37,14 +40,13 @@
 
     return {
       destroy() {
-        console.log("SimpleBar destroy");
         observer.disconnect();
         sb.unMount();
       },
     };
   }
 
-  // Sidebar resizing
+  // Sidebar resizing logic
   let sidebarWidth = $state(400);
   let isResizing = $state(false);
 
@@ -59,16 +61,15 @@
 
   function handleMouseMove(event) {
     if (!isResizing) return;
-
     const maxWidth = window.innerWidth * (2 / 3);
     const minWidth = 200;
     const newWidth = event.clientX;
-
     if (newWidth >= minWidth && newWidth <= maxWidth) {
       sidebarWidth = newWidth;
     }
   }
 
+  // Lifecycle & Data Fetching
   const dbOptions = Array.from({ length: 16 }, (_, i) => i);
 
   onMount(() => {
@@ -90,6 +91,8 @@
     }
   }
 
+  let scanBuffer = [];
+
   async function fetchKeys(isInitial = true) {
     const config = $activeConfig;
     if (!config) return;
@@ -98,20 +101,41 @@
       if (isInitial) {
         currentCursor = 0;
         keysList = [];
+        scanBuffer = [];
       }
 
-      const [nextCursor, newKeys] = await invoke("list_keys", {
+      const results = await invoke("list_keys", {
         config,
         db: selectedDb,
         cursor: currentCursor,
         pattern: activePattern,
       });
 
-      keysList = [...keysList, ...newKeys];
+      const nextCursor = results[0];
+      const newKeys = results[1];
+
+      if (newKeys && newKeys.length > 0) {
+        scanBuffer.push(...newKeys);
+      }
+
       currentCursor = nextCursor;
+
+      if (nextCursor !== 0) {
+        // Update UI occasionally if buffer is large enough
+        if (scanBuffer.length >= 20000) {
+          keysList = [...keysList, ...scanBuffer];
+          scanBuffer = [];
+        }
+        // Yield to the main thread before continuing
+        setTimeout(() => fetchKeys(false), 50);
+      } else {
+        // Final update
+        keysList = [...keysList, ...scanBuffer];
+        scanBuffer = [];
+        isScanning = false;
+      }
     } catch (error) {
       console.error("Failed to fetch keys:", error);
-    } finally {
       isScanning = false;
     }
   }
@@ -120,14 +144,13 @@
     fetchKeys(false);
   }
 
+  // Search & Filters
   function executeSearch() {
     let query = searchInput.trim();
     if (query && !query.includes("*")) {
       query = `*${query}*`;
     }
     searchInput = query;
-
-    // Reset immediately to avoid lag from processing old large list with new pattern
     keysList = [];
     activePattern = query;
     fetchKeys(true);
@@ -139,54 +162,65 @@
     }
   }
 
-  function addKey() {
-    isAddKeyDropdownOpen = !isAddKeyDropdownOpen;
-  }
-
+  // Key Value Handling (with Caching & Prefetching)
   function handleTypeSelect(type) {
     console.log(`Selected key type: ${type}`);
     isAddKeyDropdownOpen = false;
-    // Next steps would be to open a modal for key creation
   }
 
   async function selectKey(key) {
     if (selectedKey === key) return;
-
     selectedKey = key;
     const cacheKey = `${selectedDb}:${key}`;
 
-    // Check cache first for instant feedback
     if (valueCache.has(cacheKey)) {
       keyValue = valueCache.get(cacheKey);
     } else {
-      keyValue = { type: null, value: null };
-    }
+      // Don't clear keyValue immediately if we're swapping,
+      // but if it's a completely new fetch, we can show a placeholder if we want.
+      // For now, let's keep the old value for 100ms or clear it if it's been too long.
+      // keyValue = { type: null, value: null };
 
-    const config = $activeConfig;
-    if (!config) return;
+      // Only show loading if it takes more than 100ms
+      clearTimeout(valueLoadingTimeout);
+      valueLoadingTimeout = setTimeout(() => {
+        isLoadingValue = true;
+      }, 100);
 
-    try {
-      const result = await invoke("get_key_value", {
-        config,
-        key,
-        db: selectedDb,
-      });
-      // Update cache and current view
-      valueCache.set(cacheKey, result);
-      if (selectedKey === key) {
-        keyValue = result;
+      try {
+        const config = $activeConfig;
+        if (!config) return;
+
+        const result = await invoke("get_key_value", {
+          config,
+          key,
+          db: selectedDb,
+        });
+        valueCache.set(cacheKey, result);
+        // Only update if the selected key hasn't changed during the async operation
+        if (selectedKey === key) {
+          keyValue = result;
+        }
+      } catch (error) {
+        console.error("Failed to get key value:", error);
+      } finally {
+        if (selectedKey === key) {
+          clearTimeout(valueLoadingTimeout);
+          isLoadingValue = false;
+        }
       }
-    } catch (error) {
-      console.error("Failed to fetch key value:", error);
     }
   }
 
+  // UI Actions
   async function disconnect() {
     activeConfig.set(null);
     keysList = [];
     selectedKey = "";
     keyValue = { type: null, value: null };
     valueCache.clear();
+    clearTimeout(valueLoadingTimeout);
+    isLoadingValue = false;
     await resizeWindow(800, 600);
     goto("/login");
   }
@@ -197,12 +231,18 @@
     selectedKey = "";
     keyValue = { type: null, value: null };
     expandedFolders = new Set();
-    valueCache.clear(); // Clear cache when switching DBs
+    valueCache.clear();
+    clearTimeout(valueLoadingTimeout);
+    isLoadingValue = false;
     await fetchKeys();
   }
 
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
+  }
+
+  function addKey() {
+    isAddKeyDropdownOpen = !isAddKeyDropdownOpen;
   }
 
   function toggleFolder(folderPath) {
@@ -211,20 +251,16 @@
     } else {
       expandedFolders.add(folderPath);
     }
-    expandedFolders = new Set(expandedFolders); // Trigger reactivity
+    expandedFolders = new Set(expandedFolders);
   }
 
-  // Click outside to close dropdowns
   function handleClickOutside(event) {
     const dbDropdown = document.querySelector(".db-dropdown");
     const addDropdown = document.querySelector(".add-key-container");
-
-    if (dbDropdown && !dbDropdown.contains(event.target)) {
+    if (dbDropdown && !dbDropdown.contains(event.target))
       isDropdownOpen = false;
-    }
-    if (addDropdown && !addDropdown.contains(event.target)) {
+    if (addDropdown && !addDropdown.contains(event.target))
       isAddKeyDropdownOpen = false;
-    }
   }
 
   onMount(() => {
@@ -238,14 +274,13 @@
     };
   });
 
+  // Derived State & Effects
   let filteredKeys = $derived(keysList);
-
   let treeResult = $derived(buildTree(filteredKeys, ":"));
   let keyTree = $derived(treeResult.tree);
 
   $effect(() => {
     if (activePattern.trim() && filteredKeys.length > 0) {
-      // Use a timeout to avoid blocking the main thread during heavy rendering
       const timeout = setTimeout(() => {
         expandedFolders = new Set([
           ...expandedFolders,

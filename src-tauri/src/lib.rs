@@ -1,6 +1,8 @@
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::State;
+use tokio::sync::Mutex;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct RedisConfig {
@@ -15,11 +17,11 @@ pub struct RedisConfig {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "value")]
 pub enum RedisValue {
-    String(String),
-    List(Vec<String>),
-    Set(Vec<String>),
-    ZSet(Vec<(String, f64)>),
-    Hash(HashMap<String, String>),
+    String(Vec<u8>),
+    List(Vec<Vec<u8>>),
+    Set(Vec<Vec<u8>>),
+    ZSet(Vec<(Vec<u8>, f64)>),
+    Hash(HashMap<String, Vec<u8>>),
     None,
 }
 
@@ -34,20 +36,74 @@ impl RedisConfig {
         };
         format!("{}://{}{}:{}", protocol, auth, self.host, self.port)
     }
+}
 
-    async fn get_connection(&self) -> Result<redis::aio::MultiplexedConnection, String> {
-        let client = redis::Client::open(self.to_url())
+#[derive(Default)]
+pub struct ConnectionManager {
+    state: Mutex<ConnectionState>,
+}
+
+#[derive(Default)]
+struct ConnectionState {
+    connections: HashMap<i64, redis::aio::MultiplexedConnection>,
+    config: Option<RedisConfig>,
+}
+
+impl ConnectionManager {
+    async fn get_connection(
+        &self,
+        new_config: &RedisConfig,
+        db: i64,
+    ) -> Result<redis::aio::MultiplexedConnection, String> {
+        let mut state = self.state.lock().await;
+
+        let config_changed = match &state.config {
+            Some(existing) => {
+                existing.host != new_config.host
+                    || existing.port != new_config.port
+                    || existing.username != new_config.username
+                    || existing.password != new_config.password
+                    || existing.enable_ssl != new_config.enable_ssl
+            }
+            None => true,
+        };
+
+        if config_changed {
+            state.connections.clear();
+            state.config = Some(new_config.clone());
+        }
+
+        if let Some(conn) = state.connections.get(&db) {
+            return Ok(conn.clone());
+        }
+
+        // Create new connection for this DB
+        let client = redis::Client::open(new_config.to_url())
             .map_err(|e| format!("Failed to create Redis client: {}", e))?;
-        client
+
+        let mut conn = client
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| format!("Connection failed: {}", e))
+            .map_err(|e| format!("Connection failed: {}", e))?;
+
+        // SELECT the DB immediately for this connection
+        let _: () = redis::cmd("SELECT")
+            .arg(db)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
+
+        state.connections.insert(db, conn.clone());
+        Ok(conn)
     }
 }
 
 #[tauri::command]
-async fn connect_redis(config: RedisConfig) -> Result<String, String> {
-    let mut con = config.get_connection().await?;
+async fn connect_redis(
+    config: RedisConfig,
+    state: State<'_, ConnectionManager>,
+) -> Result<String, String> {
+    let mut con = state.get_connection(&config, 0).await?;
     let response: String = redis::cmd("PING")
         .query_async(&mut con)
         .await
@@ -72,22 +128,16 @@ async fn list_keys(
     db: i64,
     cursor: u64,
     pattern: String,
+    state: State<'_, ConnectionManager>,
 ) -> Result<(u64, Vec<RedisKeyInfo>), String> {
-    let mut con = config.get_connection().await?;
-
-    // Select DB
-    let _: () = redis::cmd("SELECT")
-        .arg(db)
-        .query_async(&mut con)
-        .await
-        .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
+    let mut con = state.get_connection(&config, db).await?;
 
     let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")
         .arg(cursor)
         .arg("MATCH")
         .arg(if pattern.is_empty() { "*" } else { &pattern })
         .arg("COUNT")
-        .arg(300)
+        .arg(5000)
         .query_async(&mut con)
         .await
         .map_err(|e| format!("SCAN error: {}", e))?;
@@ -114,15 +164,13 @@ async fn list_keys(
 }
 
 #[tauri::command]
-async fn get_key_value(config: RedisConfig, key: String, db: i64) -> Result<RedisValue, String> {
-    let mut con = config.get_connection().await?;
-
-    // Select DB
-    let _: () = redis::cmd("SELECT")
-        .arg(db)
-        .query_async(&mut con)
-        .await
-        .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
+async fn get_key_value(
+    config: RedisConfig,
+    key: String,
+    db: i64,
+    state: State<'_, ConnectionManager>,
+) -> Result<RedisValue, String> {
+    let mut con = state.get_connection(&config, db).await?;
 
     let key_type: String = redis::cmd("TYPE")
         .arg(&key)
@@ -132,26 +180,26 @@ async fn get_key_value(config: RedisConfig, key: String, db: i64) -> Result<Redi
 
     match key_type.as_str() {
         "string" => {
-            let val: String = con.get(&key).await.map_err(|e| e.to_string())?;
+            let val: Vec<u8> = con.get(&key).await.map_err(|e| e.to_string())?;
             Ok(RedisValue::String(val))
         }
         "list" => {
-            let val: Vec<String> = con.lrange(&key, 0, -1).await.map_err(|e| e.to_string())?;
+            let val: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(|e| e.to_string())?;
             Ok(RedisValue::List(val))
         }
         "set" => {
-            let val: Vec<String> = con.smembers(&key).await.map_err(|e| e.to_string())?;
+            let val: Vec<Vec<u8>> = con.smembers(&key).await.map_err(|e| e.to_string())?;
             Ok(RedisValue::Set(val))
         }
         "zset" => {
-            let val: Vec<(String, f64)> = con
+            let val: Vec<(Vec<u8>, f64)> = con
                 .zrange_withscores(&key, 0, -1)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(RedisValue::ZSet(val))
         }
         "hash" => {
-            let val: HashMap<String, String> =
+            let val: HashMap<String, Vec<u8>> =
                 con.hgetall(&key).await.map_err(|e| e.to_string())?;
             Ok(RedisValue::Hash(val))
         }
@@ -160,33 +208,127 @@ async fn get_key_value(config: RedisConfig, key: String, db: i64) -> Result<Redi
 }
 
 #[tauri::command]
-async fn get_db_sizes(config: RedisConfig) -> Result<Vec<i64>, String> {
-    let mut con = config.get_connection().await?;
-    let mut sizes: Vec<i64> = Vec::with_capacity(16);
+async fn get_batch_key_values(
+    config: RedisConfig,
+    keys: Vec<String>,
+    db: i64,
+    state: State<'_, ConnectionManager>,
+) -> Result<Vec<RedisValue>, String> {
+    let mut con = state.get_connection(&config, db).await?;
 
-    for db in 0..16 {
-        // Select DB
-        let _: () = redis::cmd("SELECT")
-            .arg(db)
-            .query_async(&mut con)
-            .await
-            .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
-
-        // Get DBSIZE
-        let size: i64 = redis::cmd("DBSIZE")
-            .query_async(&mut con)
-            .await
-            .map_err(|e| format!("Failed to get size for DB {}: {}", db, e))?;
-
-        sizes.push(size);
+    if keys.is_empty() {
+        return Ok(Vec::new());
     }
 
-    // Reset to DB 0
-    let _: () = redis::cmd("SELECT")
-        .arg(0)
+    // Pass 1: Get all types using pipeline
+    let mut pipe = redis::pipe();
+    for key in &keys {
+        pipe.cmd("TYPE").arg(key);
+    }
+    let types: Vec<String> = pipe
         .query_async(&mut con)
         .await
-        .map_err(|e| format!("Failed to reset to DB 0: {}", e))?;
+        .map_err(|e| format!("Pipeline Pass 1 (TYPE) failed: {}", e))?;
+
+    // Pass 2: Get all values using pipeline
+    let mut pipe = redis::pipe();
+    for (key, key_type) in keys.iter().zip(types.iter()) {
+        match key_type.as_str() {
+            "string" => {
+                pipe.cmd("GET").arg(key);
+            }
+            "list" => {
+                pipe.cmd("LRANGE").arg(key).arg(0).arg(-1);
+            }
+            "set" => {
+                pipe.cmd("SMEMBERS").arg(key);
+            }
+            "zset" => {
+                pipe.cmd("ZRANGE").arg(key).arg(0).arg(-1).arg("WITHSCORES");
+            }
+            "hash" => {
+                pipe.cmd("HGETALL").arg(key);
+            }
+            _ => {
+                pipe.cmd("EXISTS").arg(key); // Dummy command to keep alignment
+            }
+        }
+    }
+
+    // Executing Pass 2
+    let values: Vec<redis::Value> = pipe
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Pipeline Pass 2 (VALUE) failed: {}", e))?;
+
+    // Map raw redis::Value back to our RedisValue enum
+    let mut results = Vec::with_capacity(keys.len());
+    for (val, key_type) in values.into_iter().zip(types.into_iter()) {
+        let rv = match key_type.as_str() {
+            "string" => val
+                .as_sequence()
+                .and_then(|s| s.get(0))
+                .map(|v| v.clone())
+                .or(Some(val.clone()))
+                .and_then(|v| redis::from_redis_value::<Vec<u8>>(v).ok())
+                .map(RedisValue::String)
+                .unwrap_or(RedisValue::None),
+            "list" => redis::from_redis_value::<Vec<Vec<u8>>>(val)
+                .map(RedisValue::List)
+                .unwrap_or(RedisValue::None),
+            "set" => redis::from_redis_value::<Vec<Vec<u8>>>(val)
+                .map(RedisValue::Set)
+                .unwrap_or(RedisValue::None),
+            "zset" => redis::from_redis_value::<Vec<(Vec<u8>, f64)>>(val)
+                .map(RedisValue::ZSet)
+                .unwrap_or(RedisValue::None),
+            "hash" => redis::from_redis_value::<HashMap<String, Vec<u8>>>(val)
+                .map(RedisValue::Hash)
+                .unwrap_or(RedisValue::None),
+            _ => RedisValue::None,
+        };
+        results.push(rv);
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+async fn get_db_sizes(
+    config: RedisConfig,
+    state: State<'_, ConnectionManager>,
+) -> Result<Vec<i64>, String> {
+    let mut con = state.get_connection(&config, 0).await?;
+    let mut sizes: Vec<i64> = vec![0; 16];
+
+    let info: String = redis::cmd("INFO")
+        .arg("keyspace")
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Failed to get INFO keyspace: {}", e))?;
+
+    // Parse INFO keyspace
+    // format: # Keyspace\r\ndb0:keys=1,expires=0,avg_ttl=0\r\ndb1:keys=10,expires=0,avg_ttl=0
+    for line in info.lines() {
+        if line.starts_with("db") {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 2 {
+                let db_num_str = &parts[0][2..];
+                if let Ok(db_idx) = db_num_str.parse::<usize>() {
+                    if db_idx < 16 {
+                        let metrics: Vec<&str> = parts[1].split(',').collect();
+                        for metric in metrics {
+                            if metric.trim().starts_with("keys=") {
+                                if let Ok(count) = metric.trim()[5..].parse::<i64>() {
+                                    sizes[db_idx] = count;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(sizes)
 }
@@ -195,10 +337,12 @@ async fn get_db_sizes(config: RedisConfig) -> Result<Vec<i64>, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(ConnectionManager::default())
         .invoke_handler(tauri::generate_handler![
             connect_redis,
             list_keys,
             get_key_value,
+            get_batch_key_values,
             get_db_sizes
         ])
         .run(tauri::generate_context!())
