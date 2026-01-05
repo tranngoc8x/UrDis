@@ -16,7 +16,8 @@
     "@genkit-ai/google-genai": "^1.27.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "genkit": "^1.27.0"
+    "genkit": "^1.27.0",
+    "simplebar": "^6.3.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

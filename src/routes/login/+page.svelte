@@ -1,7 +1,18 @@
 <script>
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import { activeConfig, savedServers } from "$lib/stores.js";
   import { resizeWindow } from "$lib/utils.js";
+  import SimpleBar from "simplebar";
+  import "simplebar/dist/simplebar.css";
+
+  let serverListElement;
+
+  onMount(() => {
+    if (serverListElement) {
+      new SimpleBar(serverListElement);
+    }
+  });
 
   let redisHost = $state("");
   let redisPort = $state("");
@@ -118,6 +129,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <img src="/icon.png" alt="UrDis Logo" />
+      <span class="app-name">UrDis</span>
     </div>
     <button class="btn-new-server" onclick={() => openNewServerModal()}
       >+ New Redis Server</button
@@ -170,11 +182,21 @@
           No saved servers. Click "+ New Redis Server" to add one.
         </div>
       {:else}
-        <div class="server-list">
+        <div class="server-list" bind:this={serverListElement}>
           {#each $savedServers as server, index}
             <div class="server-item">
               <div class="server-info">
-                <div class="server-name">{server.name}</div>
+                <div class="server-name">
+                  {server.name}
+                  {#if server.password || server.username}
+                    <span class="icon-lock" title="Has authentication"
+                      >&#128274;</span
+                    >
+                  {/if}
+                  {#if server.enableSSL}
+                    <span class="icon-ssl" title="SSL enabled">SSL</span>
+                  {/if}
+                </div>
                 <div class="server-host">{server.host}:{server.port}</div>
               </div>
               <button

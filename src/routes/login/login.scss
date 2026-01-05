@@ -7,12 +7,14 @@
   line-height: 1.5;
   color: #e0e0e0;
   background-color: #1a1a1a;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Layout */
 .layout {
   display: flex;
-  height: calc(100vh - 32px);
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -22,24 +24,37 @@
   background-color: #232323;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   flex-shrink: 0;
 }
 
 .sidebar-logo {
   padding: 1rem;
+  padding-top: 4rem;
   display: flex;
-  justify-content: center;
-}
+  flex-direction: column;
+  align-items: center;
 
-.sidebar-logo img {
-  width: 80px;
-  height: auto;
+  img {
+    width: 80px;
+    height: auto;
+  }
+
+  .app-name {
+    margin-top: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e0e0e0;
+  }
 }
 
 .btn-new-server {
+<<<<<<< HEAD
   margin: 0 1rem 2rem;
+=======
+  margin: auto 1rem 1rem;
+>>>>>>> 6a4efd6 (feat: Thêm thư viện SimpleBar và triển khai thanh cuộn tùy chỉnh cho danh sách máy chủ, hiển thị biểu tượng xác thực/SSL, và tinh chỉnh bố cục trang đăng nhập.)
   padding: 0.4rem 0.6rem;
   background: linear-gradient(135deg, #4a9eff 0%, #357abd 100%);
   color: white;
@@ -61,7 +76,7 @@
   display: flex;
   flex-direction: column;
   padding: 1.5rem;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Quick Connect */
@@ -164,18 +179,40 @@
   border-radius: 8px;
   padding: 1rem 1.5rem;
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .server-list-section h2 {
   margin: 0 0 1rem;
   font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
 .server-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+
+  /* SimpleBar custom styles */
+  .simplebar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .simplebar-scrollbar::before {
+    background-color: #444;
+    border-radius: 3px;
+  }
+  
+  .simplebar-track.simplebar-vertical {
+    width: 8px;
+    right: 0;
+  }
 }
 
 .server-item {
@@ -198,6 +235,23 @@
 .server-name {
   font-weight: 500;
   margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .icon-lock {
+    font-size: 0.65rem;
+    opacity: 0.6;
+  }
+
+  .icon-ssl {
+    font-size: 0.5rem;
+    padding: 0.05rem 0.2rem;
+    background-color: #4caf50;
+    color: white;
+    border-radius: 2px;
+    font-weight: 600;
+  }
 }
 
 .server-host {
