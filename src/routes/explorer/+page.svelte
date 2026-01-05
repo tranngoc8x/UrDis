@@ -9,7 +9,7 @@
 
   let keysList = $state([]);
   let selectedKey = $state("");
-  let keyValue = $state(null);
+  let keyValue = $state({ type: null, value: null });
   let searchInput = $state("");
   let activePattern = $state("");
   let selectedDb = $state(0);
@@ -18,10 +18,31 @@
   let isAddKeyDropdownOpen = $state(false);
   let expandedFolders = $state(new Set());
   const redisKeyTypes = ["String", "Hash", "List", "Set", "ZSet", "Stream"];
-  let keysListElement = $state(null);
-  let simpleBarInstance = null;
   let currentCursor = $state(0);
-  let isScanning = $state(true); // Default to true since we load on mount
+  let isScanning = $state(true);
+
+  // Svelte action for SimpleBar
+  /** @param {HTMLElement} node */
+  function simplebar(node, options = { autoHide: false }) {
+    console.log("SimpleBar init on node:", node);
+    const sb = new SimpleBar(node, options);
+
+    // Auto-recalculate when content changes
+    const observer = new MutationObserver(() => sb.recalculate());
+    observer.observe(node, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    return {
+      destroy() {
+        console.log("SimpleBar destroy");
+        observer.disconnect();
+        sb.unMount();
+      },
+    };
+  }
 
   // Sidebar resizing
   let sidebarWidth = $state(400);
@@ -56,12 +77,6 @@
     } else {
       fetchDbSizes();
       fetchKeys();
-    }
-  });
-
-  $effect(() => {
-    if (keysListElement && !simpleBarInstance) {
-      simpleBarInstance = new SimpleBar(keysListElement);
     }
   });
 
@@ -136,7 +151,7 @@
 
   async function selectKey(key) {
     selectedKey = key;
-    keyValue = null;
+    keyValue = { type: null, value: null };
     const config = $activeConfig;
     if (!config) return;
     try {
@@ -150,7 +165,7 @@
     activeConfig.set(null);
     keysList = [];
     selectedKey = "";
-    keyValue = null;
+    keyValue = { type: null, value: null };
     await resizeWindow(800, 600);
     goto("/login");
   }
@@ -159,7 +174,7 @@
     selectedDb = db;
     isDropdownOpen = false;
     selectedKey = "";
-    keyValue = null;
+    keyValue = { type: null, value: null };
     expandedFolders = new Set();
     await fetchKeys();
   }
@@ -287,14 +302,12 @@
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="2.0"
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <path
-              d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9 9 9 0 0 1 6.91 3.22"
-            />
-            <polyline points="15 3 21 3 21 9" />
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+            <polyline points="21 3 21 8 16 8" />
           </svg>
         </button>
         <div class="add-key-container">
@@ -338,11 +351,7 @@
       </div>
     </div>
 
-    <div
-      class="keys-list"
-      class:scanning={isScanning}
-      bind:this={keysListElement}
-    >
+    <div class="keys-list" class:scanning={isScanning} use:simplebar>
       {@render renderTree(keyTree)}
     </div>
 
@@ -399,24 +408,24 @@
     </div>
   </aside>
 
-  <div
+  <button
     class="resizer"
     class:active={isResizing}
     onmousedown={startResizing}
-    role="separator"
+    type="button"
     aria-label="Resize Sidebar"
-  ></div>
+  ></button>
 
-  <main class="value-panel">
+  <main class="value-panel" use:simplebar data-simplebar>
     {#if selectedKey}
       <div class="value-header">
         <h2>{selectedKey}</h2>
-        {#if keyValue}
+        {#if keyValue?.type}
           <span class="type-badge">{keyValue.type}</span>
         {/if}
       </div>
       <div class="value-content">
-        {#if keyValue}
+        {#if keyValue?.value !== null}
           <pre>{formatKeyValue(keyValue)}</pre>
         {:else}
           <div class="placeholder-text">Loading...</div>

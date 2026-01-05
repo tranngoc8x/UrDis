@@ -1,3 +1,4 @@
+
 // Variables
 $bg-primary: #1a1a1a;
 $bg-secondary: #232323;
@@ -21,7 +22,7 @@ $border-color: #333;
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   flex-shrink: 0;
 }
 
@@ -225,13 +226,6 @@ $border-color: #333;
   }
 }
 
-// Keys List
-.keys-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 0.5rem;
-  min-height: 0;
-}
 
 // Tree View
 .tree-node {
@@ -251,7 +245,8 @@ $border-color: #333;
   font-size: 0.85rem;
   border-radius: 4px;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal; /* Allow wrapping */
+  word-break: break-all; /* Break long words */
   transition: background-color 0.2s, color 0.2s;
 
   &:hover {
@@ -345,28 +340,85 @@ $border-color: #333;
   opacity: 0.7;
 }
 
-// SimpleBar custom styles for keys-list
+
+// --- Scoped Scrollbar Handling ---
+
+// Shared SimpleBar overrides for both sidebar and value panel
+%custom-scrollbar {
+  // Ensure the wrapper hides native bars & takes full space
+  :global(.simplebar-content-wrapper) {
+    height: 100%;
+    width: 100%;
+    // Standard hiding
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    
+    // Webkit hiding
+    &::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+      background: transparent;
+    }
+  }
+
+  // Track Style
+  :global(.simplebar-track.simplebar-vertical) {
+    width: 14px;
+    background-color: #1a1a1a;
+    border-left: 1px solid #333;
+    z-index: 50;
+  }
+  
+  :global(.simplebar-track.simplebar-horizontal) {
+    display: none;
+  }
+
+  // Thumb Style
+  :global(.simplebar-scrollbar:before) {
+    background-color: #666;
+    border-radius: 4px;
+    opacity: 0.8;
+    left: 2px; right: 2px; top: 2px; bottom: 2px;
+    transition: opacity 0.2s, background-color 0.2s;
+  }
+
+  :global(.simplebar-scrollbar.simplebar-visible:before) {
+    opacity: 1;
+  }
+  
+  :global(.simplebar-scrollbar:hover:before) {
+    background-color: #aaa;
+    opacity: 1;
+  }
+}
+
+
 .keys-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 0.5rem;
+  flex: 1 1 0;
   min-height: 0;
+  position: relative;
+  overflow-y: auto; /* SimpleBar will hide this */
+  overflow-x: hidden;
   transition: opacity 0.2s ease;
+
+  @extend %custom-scrollbar;
 
   &.scanning {
     opacity: 0.5;
     pointer-events: none;
   }
+}
 
-  .simplebar-scrollbar::before {
-    background-color: #444;
-    border-radius: 3px;
-  }
+// ... existing footer styles ...
+
+.value-panel {
+  flex: 1;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden; // Parent hides overflow
   
-  .simplebar-track.simplebar-vertical {
-    width: 8px;
-    right: 0;
-  }
+  @extend %custom-scrollbar;
 }
 
 // Sidebar Footer
@@ -502,14 +554,7 @@ $border-color: #333;
   z-index: 1000;
   padding: 4px;
 
-  /* Scrollbar cho menu */
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: #444;
-    border-radius: 3px;
-  }
+  /* Scrollbar cho menu bị ẩn toàn cục */
 }
 
 .dropdown-item {
@@ -556,6 +601,10 @@ $border-color: #333;
   transition: background-color 0.2s;
   z-index: 10;
   position: relative;
+  padding: 0;
+  border: none;
+  display: block;
+  flex-shrink: 0;
 
   &:hover, &.active {
     background-color: $accent-color;
@@ -569,11 +618,6 @@ $border-color: #333;
     right: -2px;
     bottom: 0;
   }
-}
-.value-panel {
-  flex: 1;
-  padding: 1.5rem;
-  overflow-y: auto;
 }
 
 .value-header {
