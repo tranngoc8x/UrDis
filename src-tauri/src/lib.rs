@@ -60,19 +60,69 @@ async fn connect_redis(config: RedisConfig) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-async fn list_keys(config: RedisConfig) -> Result<Vec<String>, String> {
-    let mut con = config.get_connection().await?;
-    let keys: Vec<String> = con
-        .keys("*")
-        .await
-        .map_err(|e| format!("Failed to list keys: {}", e))?;
-    Ok(keys)
+#[derive(Serialize)]
+pub struct RedisKeyInfo {
+    pub name: String,
+    pub key_type: String,
 }
 
 #[tauri::command]
-async fn get_key_value(config: RedisConfig, key: String) -> Result<RedisValue, String> {
+async fn list_keys(
+    config: RedisConfig,
+    db: i64,
+    cursor: u64,
+    pattern: String,
+) -> Result<(u64, Vec<RedisKeyInfo>), String> {
     let mut con = config.get_connection().await?;
+
+    // Select DB
+    let _: () = redis::cmd("SELECT")
+        .arg(db)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
+
+    let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")
+        .arg(cursor)
+        .arg("MATCH")
+        .arg(if pattern.is_empty() { "*" } else { &pattern })
+        .arg("COUNT")
+        .arg(300)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("SCAN error: {}", e))?;
+
+    let mut keys = Vec::new();
+    if !batch.is_empty() {
+        // Use pipeline to get types for all keys in batch
+        let mut pipe = redis::pipe();
+        for key in &batch {
+            pipe.cmd("TYPE").arg(key);
+        }
+
+        let types: Vec<String> = pipe
+            .query_async(&mut con)
+            .await
+            .map_err(|e| format!("Pipeline TYPE error: {}", e))?;
+
+        for (name, key_type) in batch.into_iter().zip(types.into_iter()) {
+            keys.push(RedisKeyInfo { name, key_type });
+        }
+    }
+
+    Ok((next_cursor, keys))
+}
+
+#[tauri::command]
+async fn get_key_value(config: RedisConfig, key: String, db: i64) -> Result<RedisValue, String> {
+    let mut con = config.get_connection().await?;
+
+    // Select DB
+    let _: () = redis::cmd("SELECT")
+        .arg(db)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
 
     let key_type: String = redis::cmd("TYPE")
         .arg(&key)
@@ -109,6 +159,38 @@ async fn get_key_value(config: RedisConfig, key: String) -> Result<RedisValue, S
     }
 }
 
+#[tauri::command]
+async fn get_db_sizes(config: RedisConfig) -> Result<Vec<i64>, String> {
+    let mut con = config.get_connection().await?;
+    let mut sizes: Vec<i64> = Vec::with_capacity(16);
+
+    for db in 0..16 {
+        // Select DB
+        let _: () = redis::cmd("SELECT")
+            .arg(db)
+            .query_async(&mut con)
+            .await
+            .map_err(|e| format!("Failed to select DB {}: {}", db, e))?;
+
+        // Get DBSIZE
+        let size: i64 = redis::cmd("DBSIZE")
+            .query_async(&mut con)
+            .await
+            .map_err(|e| format!("Failed to get size for DB {}: {}", db, e))?;
+
+        sizes.push(size);
+    }
+
+    // Reset to DB 0
+    let _: () = redis::cmd("SELECT")
+        .arg(0)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Failed to reset to DB 0: {}", e))?;
+
+    Ok(sizes)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -116,7 +198,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connect_redis,
             list_keys,
-            get_key_value
+            get_key_value,
+            get_db_sizes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

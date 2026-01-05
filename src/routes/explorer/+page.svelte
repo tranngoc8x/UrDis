@@ -3,28 +3,115 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { activeConfig } from "$lib/stores.js";
-  import { resizeWindow, formatKeyValue } from "$lib/utils.js";
+  import { resizeWindow, formatKeyValue, buildTree } from "$lib/utils.js";
+  import SimpleBar from "simplebar";
+  import "simplebar/dist/simplebar.css";
 
   let keysList = $state([]);
   let selectedKey = $state("");
   let keyValue = $state(null);
-  let searchQuery = $state("");
+  let searchInput = $state("");
+  let activePattern = $state("");
+  let selectedDb = $state(0);
+  let dbSizes = $state([]);
+  let isDropdownOpen = $state(false);
+  let expandedFolders = $state(new Set());
+  let keysListElement = $state(null);
+  let simpleBarInstance = null;
+  let currentCursor = $state(0);
+  let isScanning = $state(true); // Default to true since we load on mount
+
+  // Sidebar resizing
+  let sidebarWidth = $state(280);
+  let isResizing = $state(false);
+
+  function startResizing(event) {
+    isResizing = true;
+    event.preventDefault();
+  }
+
+  function stopResizing() {
+    isResizing = false;
+  }
+
+  function handleMouseMove(event) {
+    if (!isResizing) return;
+
+    const maxWidth = window.innerWidth * (2 / 3);
+    const minWidth = 200;
+    const newWidth = event.clientX;
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      sidebarWidth = newWidth;
+    }
+  }
+
+  const dbOptions = Array.from({ length: 16 }, (_, i) => i);
 
   onMount(() => {
     if (!$activeConfig) {
       goto("/login");
     } else {
+      fetchDbSizes();
       fetchKeys();
     }
   });
 
-  async function fetchKeys() {
+  $effect(() => {
+    if (keysListElement && !simpleBarInstance) {
+      simpleBarInstance = new SimpleBar(keysListElement);
+    }
+  });
+
+  async function fetchDbSizes() {
     const config = $activeConfig;
     if (!config) return;
     try {
-      keysList = await invoke("list_keys", { config });
+      dbSizes = await invoke("get_db_sizes", { config });
+    } catch (error) {
+      console.error("Failed to fetch DB sizes:", error);
+    }
+  }
+
+  async function fetchKeys(isInitial = true) {
+    const config = $activeConfig;
+    if (!config) return;
+    try {
+      isScanning = true;
+      if (isInitial) {
+        currentCursor = 0;
+        keysList = [];
+      }
+
+      const [nextCursor, newKeys] = await invoke("list_keys", {
+        config,
+        db: selectedDb,
+        cursor: currentCursor,
+        pattern: activePattern,
+      });
+
+      keysList = [...keysList, ...newKeys];
+      currentCursor = nextCursor;
     } catch (error) {
       console.error("Failed to fetch keys:", error);
+    } finally {
+      isScanning = false;
+    }
+  }
+
+  function scanMore() {
+    fetchKeys(false);
+  }
+
+  function handleSearch(event) {
+    if (event.key === "Enter") {
+      let query = searchInput.trim();
+      if (query && !query.includes("*")) {
+        query = `*${query}*`;
+      }
+      searchInput = query;
+      activePattern = query;
+      fetchKeys(true);
     }
   }
 
@@ -34,7 +121,7 @@
     const config = $activeConfig;
     if (!config) return;
     try {
-      keyValue = await invoke("get_key_value", { config, key });
+      keyValue = await invoke("get_key_value", { config, key, db: selectedDb });
     } catch (error) {
       console.error("Failed to fetch key value:", error);
     }
@@ -49,40 +136,181 @@
     goto("/login");
   }
 
-  let filteredKeys = $derived(
-    keysList.filter((key) =>
-      key.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  );
+  async function changeDb(db) {
+    selectedDb = db;
+    isDropdownOpen = false;
+    selectedKey = "";
+    keyValue = null;
+    expandedFolders = new Set();
+    await fetchKeys();
+  }
+
+  function toggleDropdown() {
+    isDropdownOpen = !isDropdownOpen;
+  }
+
+  function toggleFolder(folderPath) {
+    if (expandedFolders.has(folderPath)) {
+      expandedFolders.delete(folderPath);
+    } else {
+      expandedFolders.add(folderPath);
+    }
+    expandedFolders = new Set(expandedFolders); // Trigger reactivity
+  }
+
+  // Click outside to close dropdown
+  function handleClickOutside(event) {
+    const dropdown = document.querySelector(".db-dropdown");
+    if (dropdown && !dropdown.contains(event.target)) {
+      isDropdownOpen = false;
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("click", handleClickOutside);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResizing);
+    return () => {
+      window.removeEventListener("click", handleClickOutside);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizing);
+    };
+  });
+
+  let filteredKeys = $derived(keysList);
+
+  let treeResult = $derived(buildTree(filteredKeys, ":"));
+  let keyTree = $derived(treeResult.tree);
+
+  $effect(() => {
+    if (activePattern.trim()) {
+      // Auto expand folders when searching
+      expandedFolders = new Set([
+        ...expandedFolders,
+        ...treeResult.pathsToExpand,
+      ]);
+    }
+  });
 </script>
 
+{#snippet renderTree(nodes, depth = 0, parentPath = "")}
+  {@const visibleNodes = nodes.slice(0, 200)}
+  {#each visibleNodes as node}
+    {@const currentPath = parentPath ? `${parentPath}:${node.name}` : node.name}
+    <div class="tree-node" style="padding-left: {depth * 12}px">
+      {#if node.type === "folder"}
+        <button
+          class="tree-item folder"
+          onclick={() => toggleFolder(currentPath)}
+        >
+          <span class="tree-tag tag-dir">DIR</span>
+          <span class="name">{node.name}</span>
+          <span class="count-badge">
+            ({node.keyCount}{currentCursor !== 0 ? "+" : ""})
+          </span>
+        </button>
+        {#if expandedFolders.has(currentPath)}
+          {@render renderTree(node.children, depth + 1, currentPath)}
+        {/if}
+      {:else}
+        <button
+          class="tree-item key"
+          class:selected={selectedKey === node.fullPath}
+          onclick={() => selectKey(node.fullPath)}
+        >
+          <span class="tree-tag tag-key"
+            >{(node.key_type || "KEY").toUpperCase()}</span
+          >
+          <span class="name">{node.name}</span>
+        </button>
+      {/if}
+    </div>
+  {/each}
+  {#if nodes.length > 200}
+    <div class="limit-info" style="padding-left: {depth * 12 + 20}px">
+      Showing 200 of {nodes.length} items...
+    </div>
+  {/if}
+{/snippet}
+
 <div class="layout">
-  <aside class="sidebar sidebar-explorer">
+  <aside class="sidebar sidebar-explorer" style="width: {sidebarWidth}px">
     <div class="sidebar-header">
       <h3>Keys ({filteredKeys.length})</h3>
       <div class="search-box">
         <input
           type="text"
-          placeholder="Search keys..."
-          bind:value={searchQuery}
+          placeholder="Search keys... (Enter to search)"
+          bind:value={searchInput}
+          onkeydown={handleSearch}
         />
       </div>
     </div>
 
-    <div class="keys-list">
-      {#each filteredKeys as key}
-        <button
-          class="key-item"
-          class:selected={selectedKey === key}
-          onclick={() => selectKey(key)}
-        >
-          {key}
-        </button>
-      {/each}
+    <div class="keys-list" bind:this={keysListElement}>
+      {@render renderTree(keyTree)}
     </div>
 
-    <button class="btn-disconnect" onclick={disconnect}>Disconnect</button>
+    <div class="sidebar-footer">
+      {#if currentCursor !== 0}
+        <button class="btn-scan-more" onclick={scanMore} disabled={isScanning}>
+          {#if isScanning}
+            <span class="spinner"></span>
+          {/if}
+          {isScanning ? "Scanning..." : "Scan More"}
+        </button>
+      {/if}
+
+      <div class="footer-bottom-row">
+        <button class="btn-disconnect" onclick={disconnect} title="Disconnect">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+
+        <div class="db-dropdown">
+          <button class="dropdown-trigger" onclick={toggleDropdown}>
+            DB {selectedDb} ({dbSizes[selectedDb] ?? 0})
+            <span class="arrow" class:open={isDropdownOpen}>▼</span>
+          </button>
+          {#if isDropdownOpen}
+            <div class="dropdown-menu">
+              {#each dbOptions as db}
+                <button
+                  class="dropdown-item"
+                  class:active={selectedDb === db}
+                  onclick={() => changeDb(db)}
+                >
+                  <span class="db-label">DB {db}</span>
+                  <span class="db-count">{dbSizes[db] ?? 0}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
   </aside>
+
+  <div
+    class="resizer"
+    class:active={isResizing}
+    onmousedown={startResizing}
+    role="separator"
+    aria-label="Resize Sidebar"
+  ></div>
 
   <main class="value-panel">
     {#if selectedKey}
