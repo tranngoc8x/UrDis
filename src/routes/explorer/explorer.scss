@@ -31,23 +31,182 @@ $border-color: #333;
 }
 
 .sidebar-header {
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid $border-color;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 
-  h3 {
-    margin: 0 0 0.75rem;
-    font-size: 0.9rem;
-    color: $text-secondary;
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    h3 {
+      margin: 0;
+      font-size: 0.85rem;
+      color: $text-secondary;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
   }
+
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+}
+
+.btn-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background-color: $bg-tertiary;
+  color: $text-secondary;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: $bg-secondary;
+    color: $accent-color;
+    border-color: rgba($accent-color, 0.3);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &.refresh {
+    flex-shrink: 0;
+    color: $accent-color;
+    background-color: rgba($accent-color, 0.1);
+
+    &:hover {
+      background-color: $accent-color;
+      color: white;
+    }
+  }
+
+  &.add {
+    flex-shrink: 0;
+    color: #10b981; // Emerald-500
+    background-color: rgba(#10b981, 0.1);
+
+    &:hover, &.active {
+      background-color: #10b981;
+      color: white;
+      border-color: #10b981;
+    }
+  }
+}
+
+.add-key-container {
+  position: relative;
+  display: flex;
+}
+
+.add-key-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background-color: $bg-secondary;
+  border: 1px solid $border-color;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  width: 150px;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: dropdownFade 0.2s ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    right: 10px;
+    width: 10px;
+    height: 10px;
+    background-color: $bg-secondary;
+    border-left: 1px solid $border-color;
+    border-top: 1px solid $border-color;
+    transform: rotate(45deg);
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.5rem 0.75rem;
+    background: none;
+    border: none;
+    color: $text-primary;
+    font-size: 0.825rem;
+    cursor: pointer;
+    border-radius: 4px;
+    width: 100%;
+    text-align: left;
+    transition: all 0.2s;
+    position: relative;
+    z-index: 1;
+
+    &:hover {
+      background-color: $bg-tertiary;
+      color: $accent-color;
+    }
+
+    .type-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 800;
+      border-radius: 4px;
+      color: white;
+      text-transform: uppercase;
+      flex-shrink: 0;
+
+      &.tag-string { background-color: #3b82f6; }
+      &.tag-hash { background-color: #a855f7; }
+      &.tag-list { background-color: #06b6d4; }
+      &.tag-set { background-color: #f59e0b; }
+      &.tag-zset { background-color: #ec4899; }
+      &.tag-stream { background-color: #f43f5e; }
+    }
+
+    .type-label {
+      font-weight: 500;
+    }
+  }
+}
+
+@keyframes dropdownFade {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 // Search Box
 .search-box {
+  flex: 1;
   display: flex;
   align-items: center;
   background-color: $bg-tertiary;
   border-radius: 4px;
-  padding: 0.4rem 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
+
+  &:focus-within {
+    border-color: rgba($accent-color, 0.5);
+  }
 
   input {
     flex: 1;
@@ -150,6 +309,10 @@ $border-color: #333;
       background-color: #ec4899; // Pink-500
     }
 
+    &.tag-stream {
+      background-color: #f43f5e; // Rose-500
+    }
+
     &.tag-key {
       background-color: #10b981; // Emerald-500 (Default key)
     }
@@ -188,6 +351,12 @@ $border-color: #333;
   overflow-y: auto;
   padding: 0 0.5rem;
   min-height: 0;
+  transition: opacity 0.2s ease;
+
+  &.scanning {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 
   .simplebar-scrollbar::before {
     background-color: #444;

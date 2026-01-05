@@ -15,14 +15,16 @@
   let selectedDb = $state(0);
   let dbSizes = $state([]);
   let isDropdownOpen = $state(false);
+  let isAddKeyDropdownOpen = $state(false);
   let expandedFolders = $state(new Set());
+  const redisKeyTypes = ["String", "Hash", "List", "Set", "ZSet", "Stream"];
   let keysListElement = $state(null);
   let simpleBarInstance = null;
   let currentCursor = $state(0);
   let isScanning = $state(true); // Default to true since we load on mount
 
   // Sidebar resizing
-  let sidebarWidth = $state(280);
+  let sidebarWidth = $state(400);
   let isResizing = $state(false);
 
   function startResizing(event) {
@@ -103,16 +105,33 @@
     fetchKeys(false);
   }
 
+  function executeSearch() {
+    let query = searchInput.trim();
+    if (query && !query.includes("*")) {
+      query = `*${query}*`;
+    }
+    searchInput = query;
+
+    // Reset immediately to avoid lag from processing old large list with new pattern
+    keysList = [];
+    activePattern = query;
+    fetchKeys(true);
+  }
+
   function handleSearch(event) {
     if (event.key === "Enter") {
-      let query = searchInput.trim();
-      if (query && !query.includes("*")) {
-        query = `*${query}*`;
-      }
-      searchInput = query;
-      activePattern = query;
-      fetchKeys(true);
+      executeSearch();
     }
+  }
+
+  function addKey() {
+    isAddKeyDropdownOpen = !isAddKeyDropdownOpen;
+  }
+
+  function handleTypeSelect(type) {
+    console.log(`Selected key type: ${type}`);
+    isAddKeyDropdownOpen = false;
+    // Next steps would be to open a modal for key creation
   }
 
   async function selectKey(key) {
@@ -158,11 +177,16 @@
     expandedFolders = new Set(expandedFolders); // Trigger reactivity
   }
 
-  // Click outside to close dropdown
+  // Click outside to close dropdowns
   function handleClickOutside(event) {
-    const dropdown = document.querySelector(".db-dropdown");
-    if (dropdown && !dropdown.contains(event.target)) {
+    const dbDropdown = document.querySelector(".db-dropdown");
+    const addDropdown = document.querySelector(".add-key-container");
+
+    if (dbDropdown && !dbDropdown.contains(event.target)) {
       isDropdownOpen = false;
+    }
+    if (addDropdown && !addDropdown.contains(event.target)) {
+      isAddKeyDropdownOpen = false;
     }
   }
 
@@ -183,12 +207,15 @@
   let keyTree = $derived(treeResult.tree);
 
   $effect(() => {
-    if (activePattern.trim()) {
-      // Auto expand folders when searching
-      expandedFolders = new Set([
-        ...expandedFolders,
-        ...treeResult.pathsToExpand,
-      ]);
+    if (activePattern.trim() && filteredKeys.length > 0) {
+      // Use a timeout to avoid blocking the main thread during heavy rendering
+      const timeout = setTimeout(() => {
+        expandedFolders = new Set([
+          ...expandedFolders,
+          ...treeResult.pathsToExpand,
+        ]);
+      }, 100);
+      return () => clearTimeout(timeout);
     }
   });
 </script>
@@ -236,18 +263,86 @@
 <div class="layout">
   <aside class="sidebar sidebar-explorer" style="width: {sidebarWidth}px">
     <div class="sidebar-header">
-      <h3>Keys ({filteredKeys.length})</h3>
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="Search keys... (Enter to search)"
-          bind:value={searchInput}
-          onkeydown={handleSearch}
-        />
+      <div class="header-top">
+        <h3>Keys ({filteredKeys.length})</h3>
+      </div>
+      <div class="search-row">
+        <div class="search-box">
+          <input
+            type="text"
+            placeholder="Search keys... (Enter to search)"
+            bind:value={searchInput}
+            onkeydown={handleSearch}
+          />
+        </div>
+        <button
+          class="btn-action refresh"
+          onclick={executeSearch}
+          title="Refresh/Search"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9 9 9 0 0 1 6.91 3.22"
+            />
+            <polyline points="15 3 21 3 21 9" />
+          </svg>
+        </button>
+        <div class="add-key-container">
+          <button
+            class="btn-action add"
+            onclick={addKey}
+            title="Add New Key"
+            class:active={isAddKeyDropdownOpen}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          {#if isAddKeyDropdownOpen}
+            <div class="add-key-dropdown">
+              {#each redisKeyTypes as type}
+                <button
+                  class="dropdown-item"
+                  onclick={() => handleTypeSelect(type.toLowerCase())}
+                >
+                  <span class="type-icon tag-{type.toLowerCase()}">
+                    {type[0]}
+                  </span>
+                  <span class="type-label">{type}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
 
-    <div class="keys-list" bind:this={keysListElement}>
+    <div
+      class="keys-list"
+      class:scanning={isScanning}
+      bind:this={keysListElement}
+    >
       {@render renderTree(keyTree)}
     </div>
 
