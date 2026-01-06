@@ -49,48 +49,48 @@ export function bytesToHex(bytes) {
 }
 
 /**
- * Format raw bytes for display
- * @param {Uint8Array|any} val
- * @returns {any}
+ * Format raw value based on its type and content
+ * @param {string} val
+ * @param {string} type - "String" or "Binary"
+ * @returns {string}
  */
-function formatRawValue(val) {
-  if (val instanceof Uint8Array || Array.isArray(val)) {
-    const bytes = val instanceof Uint8Array ? val : new Uint8Array(val);
-    if (isPrintableUtf8(bytes)) {
-      // Truncate extremely large strings for UI stability (1MB limit)
-      const MAX_STRING_SIZE = 1024 * 1024;
-      if (bytes.length > MAX_STRING_SIZE) {
-        const truncated = bytes.slice(0, MAX_STRING_SIZE);
-        return `${new TextDecoder().decode(
-          truncated
-        )}\n\n--- [Dữ liệu quá lớn, đã cắt bớt 1MB đầu tiên] ---`;
-      }
-      return new TextDecoder().decode(bytes);
-    }
-    return `[Binary] Hex: ${bytesToHex(bytes.slice(0, 100))}${
-      bytes.length > 100 ? "..." : ""
+function formatRawValue(val, type = "String") {
+  if (type === "Binary") {
+    return `[Binary/Base64]: ${val.slice(0, 100)}${
+      val.length > 100 ? "..." : ""
     }`;
   }
+
+  // Truncate extremely large strings for UI stability (1MB limit)
+  const MAX_STRING_SIZE = 1024 * 1024;
+  if (val && val.length > MAX_STRING_SIZE) {
+    return `${val.slice(
+      0,
+      MAX_STRING_SIZE
+    )}\n\n--- [Dữ liệu quá lớn, đã cắt bớt 1MB đầu tiên] ---`;
+  }
+
   return val;
 }
 
 /**
  * Format key value for display
- * @param {object} keyValue
+ * @param {{type: string, value: any}} keyValue
  * @returns {string}
  */
 export function formatKeyValue(keyValue) {
-  if (!keyValue || keyValue.value === null) return "";
+  if (!keyValue || (keyValue.type === "None" && !keyValue.value)) return "";
 
   const { type, value } = keyValue;
 
   switch (type) {
     case "String":
-      return formatRawValue(value);
+    case "Binary":
+      return formatRawValue(value, type);
     case "List":
     case "Set": {
       const limitedValue = value.slice(0, 500);
-      let json = JSON.stringify(limitedValue.map(formatRawValue), null, 2);
+      let json = JSON.stringify(limitedValue, null, 2);
       if (value.length > 500) {
         json += `\n\n--- [Vượt quá 500 phần tử, chỉ hiển thị ${limitedValue.length} phần tử đầu tiên] ---`;
       }
@@ -98,11 +98,7 @@ export function formatKeyValue(keyValue) {
     }
     case "ZSet": {
       const limitedValue = value.slice(0, 500);
-      let json = JSON.stringify(
-        limitedValue.map(([v, s]) => [formatRawValue(v), s]),
-        null,
-        2
-      );
+      let json = JSON.stringify(limitedValue, null, 2);
       if (value.length > 500) {
         json += `\n\n--- [Vượt quá 500 phần tử, chỉ hiển thị ${limitedValue.length} phần tử đầu tiên] ---`;
       }
@@ -111,10 +107,7 @@ export function formatKeyValue(keyValue) {
     case "Hash": {
       const entries = Object.entries(value);
       const limitedEntries = entries.slice(0, 500);
-      const formattedHash = {};
-      for (const [k, v] of limitedEntries) {
-        formattedHash[k] = formatRawValue(v);
-      }
+      const formattedHash = Object.fromEntries(limitedEntries);
       let json = JSON.stringify(formattedHash, null, 2);
       if (entries.length > 500) {
         json += `\n\n--- [Vượt quá 500 field, chỉ hiển thị ${limitedEntries.length} field đầu tiên] ---`;
@@ -127,11 +120,12 @@ export function formatKeyValue(keyValue) {
 }
 /**
  * Build a tree structure from a flat list of keys
- * @param {object[]} keys - Array of { name, key_type }
+ * @param {any[]} keys - Array of { name, key_type }
  * @param {string} separator
- * @returns {{tree: object[], pathsToExpand: Set<string>}}
+ * @returns {{tree: any[], pathsToExpand: Set<string>}}
  */
 export function buildTree(keys, separator = ":") {
+  /** @type {any[]} */
   const root = [];
   const pathsToExpand = new Set();
   const folderMap = new Map(); // Fast lookup: path -> folder object

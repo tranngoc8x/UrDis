@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,11 +18,12 @@ pub struct RedisConfig {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "value")]
 pub enum RedisValue {
-    String(Vec<u8>),
-    List(Vec<Vec<u8>>),
-    Set(Vec<Vec<u8>>),
-    ZSet(Vec<(Vec<u8>, f64)>),
-    Hash(HashMap<String, Vec<u8>>),
+    String(String),
+    Binary(String), // Base64 encoded
+    List(Vec<String>),
+    Set(Vec<String>),
+    ZSet(Vec<(String, f64)>),
+    Hash(HashMap<String, String>),
     None,
 }
 
@@ -172,6 +174,33 @@ pub struct RedisKeyData {
     pub encoding: String,
 }
 
+fn format_redis_bytes(bytes: Vec<u8>) -> (String, bool) {
+    match String::from_utf8(bytes) {
+        Ok(s) => (s, true),
+        Err(e) => (general_purpose::STANDARD.encode(e.into_bytes()), false),
+    }
+}
+
+// Updated formatters for other types
+fn format_redis_bytes_list(bytes_list: Vec<Vec<u8>>) -> Vec<String> {
+    bytes_list
+        .into_iter()
+        .map(|b| format_redis_bytes(b).0)
+        .collect()
+}
+
+fn format_redis_bytes_zset(zset: Vec<(Vec<u8>, f64)>) -> Vec<(String, f64)> {
+    zset.into_iter()
+        .map(|(b, s)| (format_redis_bytes(b).0, s))
+        .collect()
+}
+
+fn format_redis_bytes_hash(hash: HashMap<String, Vec<u8>>) -> HashMap<String, String> {
+    hash.into_iter()
+        .map(|(k, v)| (k, format_redis_bytes(v).0))
+        .collect()
+}
+
 #[tauri::command]
 async fn get_key_value(
     config: RedisConfig,
@@ -207,27 +236,32 @@ async fn get_key_value(
     let value = match key_type.as_str() {
         "string" => {
             let val: Vec<u8> = con.get(&key).await.map_err(|e| e.to_string())?;
-            RedisValue::String(val)
+            let (s, is_utf8) = format_redis_bytes(val);
+            if is_utf8 {
+                RedisValue::String(s)
+            } else {
+                RedisValue::Binary(s)
+            }
         }
         "list" => {
             let val: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(|e| e.to_string())?;
-            RedisValue::List(val)
+            RedisValue::List(format_redis_bytes_list(val))
         }
         "set" => {
             let val: Vec<Vec<u8>> = con.smembers(&key).await.map_err(|e| e.to_string())?;
-            RedisValue::Set(val)
+            RedisValue::Set(format_redis_bytes_list(val))
         }
         "zset" => {
             let val: Vec<(Vec<u8>, f64)> = con
                 .zrange_withscores(&key, 0, -1)
                 .await
                 .map_err(|e| e.to_string())?;
-            RedisValue::ZSet(val)
+            RedisValue::ZSet(format_redis_bytes_zset(val))
         }
         "hash" => {
             let val: HashMap<String, Vec<u8>> =
                 con.hgetall(&key).await.map_err(|e| e.to_string())?;
-            RedisValue::Hash(val)
+            RedisValue::Hash(format_redis_bytes_hash(val))
         }
         _ => RedisValue::None,
     };
@@ -302,22 +336,29 @@ async fn get_batch_key_values(
             "string" => val
                 .as_sequence()
                 .and_then(|s| s.get(0))
-                .map(|v| v.clone())
+                .cloned()
                 .or(Some(val.clone()))
                 .and_then(|v| redis::from_redis_value::<Vec<u8>>(v).ok())
-                .map(RedisValue::String)
+                .map(|v| {
+                    let (s, is_utf8) = format_redis_bytes(v);
+                    if is_utf8 {
+                        RedisValue::String(s)
+                    } else {
+                        RedisValue::Binary(s)
+                    }
+                })
                 .unwrap_or(RedisValue::None),
             "list" => redis::from_redis_value::<Vec<Vec<u8>>>(val)
-                .map(RedisValue::List)
+                .map(|v| RedisValue::List(format_redis_bytes_list(v)))
                 .unwrap_or(RedisValue::None),
             "set" => redis::from_redis_value::<Vec<Vec<u8>>>(val)
-                .map(RedisValue::Set)
+                .map(|v| RedisValue::Set(format_redis_bytes_list(v)))
                 .unwrap_or(RedisValue::None),
             "zset" => redis::from_redis_value::<Vec<(Vec<u8>, f64)>>(val)
-                .map(RedisValue::ZSet)
+                .map(|v| RedisValue::ZSet(format_redis_bytes_zset(v)))
                 .unwrap_or(RedisValue::None),
             "hash" => redis::from_redis_value::<HashMap<String, Vec<u8>>>(val)
-                .map(RedisValue::Hash)
+                .map(|v| RedisValue::Hash(format_redis_bytes_hash(v)))
                 .unwrap_or(RedisValue::None),
             _ => RedisValue::None,
         };

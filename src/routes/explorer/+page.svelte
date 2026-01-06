@@ -8,6 +8,7 @@
   import "simplebar/dist/simplebar.css";
 
   // State Management
+  /** @type {any[]} */
   let keysList = $state([]);
   let selectedKey = $state("");
   let keyValue = $state({
@@ -19,9 +20,11 @@
   });
   let valueCache = new Map(); // Cache for near-instant display
 
+  /** @type {string} */
   let searchInput = $state("");
   let activePattern = $state("");
   let selectedDb = $state(0);
+  /** @type {number[]} */
   let dbSizes = $state([]);
   let isDropdownOpen = $state(false);
   let isAddKeyDropdownOpen = $state(false);
@@ -48,7 +51,13 @@
   /** @param {HTMLElement} node */
   function simplebar(node, options = { autoHide: false }) {
     const sb = new SimpleBar(node, options);
-    const observer = new MutationObserver(() => sb.recalculate());
+    // Optimization: Throttle recalculates to avoid forced reflow storms
+    /** @type {number} */
+    let rafId;
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => sb.recalculate());
+    });
     observer.observe(node, {
       childList: true,
       subtree: true,
@@ -180,14 +189,27 @@
     }
   }
 
+  /** @param {any} event */
+  function handleSearchInput(event) {
+    searchInput = event.target.value;
+  }
+
   // Key Value Handling (with Caching & Prefetching)
+  /** @param {string} type */
   function handleTypeSelect(type) {
     console.log(`Selected key type: ${type}`);
     isAddKeyDropdownOpen = false;
   }
 
+  /** @param {string} key */
   async function selectKey(key) {
     if (selectedKey === key) return;
+
+    // Performance: Clear editor immediately before any async work
+    if (editorNode) editorNode.innerHTML = "";
+    originalContent = "";
+    editableContent = "";
+
     selectedKey = key;
     const cacheKey = `${selectedDb}:${key}`;
 
@@ -244,10 +266,31 @@
 
       // Update editor DOM manually to maintain line wrappers for CSS counters
       if (editorNode) {
-        editorNode.innerHTML = formatted
-          .split("\n")
-          .map((line) => `<div>${line || "<br>"}</div>`)
-          .join("");
+        // Optimized: Only update if content actually changed (avoid re-renders)
+        // Guard: Use requestAnimationFrame to prevent blocking the UI thread on large content
+        requestAnimationFrame(() => {
+          if (!editorNode) return;
+
+          // Guard: If value is too large, it can crash the browser tab in contenteditable
+          const MAX_EDITABLE_SIZE = 100 * 1024; // 100KB
+          if (formatted.length > MAX_EDITABLE_SIZE) {
+            editorNode.setAttribute("contenteditable", "false");
+            editorNode.innerHTML =
+              `<div class="warning-text">// Nội dung quá lớn (${formatBytes(formatted.length)}), chế độ chỉnh sửa đã bị tắt để đảm bảo hiệu năng.</div>` +
+              formatted
+                .slice(0, MAX_EDITABLE_SIZE)
+                .split("\n")
+                .map((line) => `<div>${line || "<br>"}</div>`)
+                .join("") +
+              `<div class="warning-text">... [Đã cắt bớt nội dung]</div>`;
+          } else {
+            editorNode.setAttribute("contenteditable", "true");
+            editorNode.innerHTML = formatted
+              .split("\n")
+              .map((line) => `<div>${line || "<br>"}</div>`)
+              .join("");
+          }
+        });
       }
     }
   });
@@ -255,6 +298,9 @@
   /** @param {any} event */
   function handleInput(event) {
     // Extract plain text while maintaining logical lines (divs)
+    // textContent is faster and safer than innerText but doesn't preserve line breaks from divs well.
+    // However, innerText is the one that forces reflow.
+    // For large buffers, we might need a more optimized way.
     editableContent = event.target.innerText.replace(/\n$/, "");
   }
 
@@ -274,13 +320,15 @@
       });
 
       // Update cache and original state
-      const updatedValue = {
-        ...keyValue,
-        value: { ...keyValue.value, value: editableContent },
-      };
-      keyValue = updatedValue;
-      originalContent = editableContent;
-      valueCache.set(`${selectedDb}:${selectedKey}`, updatedValue);
+      if (keyValue.value) {
+        const updatedValue = {
+          ...keyValue,
+          value: { ...keyValue.value, value: editableContent },
+        };
+        keyValue = updatedValue;
+        originalContent = editableContent;
+        valueCache.set(`${selectedDb}:${selectedKey}`, updatedValue);
+      }
 
       console.log("Value saved successfully");
     } catch (error) {
@@ -292,6 +340,7 @@
   }
 
   // Formatting helpers for metadata
+  /** @param {number} ttl */
   function formatTTL(ttl) {
     if (ttl === -1) return "Persistent";
     if (ttl === -2) return "Expired";
@@ -300,10 +349,11 @@
     return `${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m`;
   }
 
+  /** @param {number} bytes */
   function formatBytes(bytes) {
     if (bytes === 0) return "0 B";
     const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }
@@ -326,9 +376,12 @@
     goto("/login");
   }
 
+  /** @param {number} db */
   async function changeDb(db) {
+    if (selectedDb === db) return;
     selectedDb = db;
     isDropdownOpen = false;
+    keysList = [];
     selectedKey = "";
     keyValue = {
       key_type: null,
@@ -337,7 +390,6 @@
       memory: 0,
       encoding: "",
     };
-    expandedFolders = new Set();
     valueCache.clear();
     clearTimeout(valueLoadingTimeout);
     isLoadingValue = false;
@@ -352,6 +404,7 @@
     isAddKeyDropdownOpen = !isAddKeyDropdownOpen;
   }
 
+  /** @param {string} folderPath */
   function toggleFolder(folderPath) {
     if (expandedFolders.has(folderPath)) {
       expandedFolders.delete(folderPath);
@@ -361,6 +414,12 @@
     expandedFolders = new Set(expandedFolders);
   }
 
+  /** @param {Event} event */
+  function preventPropagation(event) {
+    event.stopPropagation();
+  }
+
+  /** @param {MouseEvent} event */
   function handleClickOutside(event) {
     const dbDropdown = document.querySelector(".db-dropdown");
     const addDropdown = document.querySelector(".add-key-container");
