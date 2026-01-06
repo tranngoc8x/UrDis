@@ -271,28 +271,28 @@
         requestAnimationFrame(() => {
           if (!editorNode) return;
 
-          // Guard: If value is too large, it can crash the browser tab in contenteditable
-          const MAX_EDITABLE_SIZE = 100 * 1024; // 100KB
-          if (formatted.length > MAX_EDITABLE_SIZE) {
-            editorNode.setAttribute("contenteditable", "false");
-            editorNode.innerHTML =
-              `<div class="warning-text">// Nội dung quá lớn (${formatBytes(formatted.length)}), chế độ chỉnh sửa đã bị tắt để đảm bảo hiệu năng.</div>` +
-              formatted
-                .slice(0, MAX_EDITABLE_SIZE)
-                .split("\n")
-                .map((line) => `<div>${line || "<br>"}</div>`)
-                .join("") +
-              `<div class="warning-text">... [Đã cắt bớt nội dung]</div>`;
-          } else {
-            editorNode.setAttribute("contenteditable", "true");
-            editorNode.innerHTML = formatted
-              .split("\n")
-              .map((line) => `<div>${line || "<br>"}</div>`)
-              .join("");
-          }
+          editorNode.setAttribute("contenteditable", "true");
+          editorNode.innerHTML = formatted
+            .split("\n")
+            .map((line) => `<div>${line || "<br>"}</div>`)
+            .join("");
         });
       }
     }
+  });
+
+  $effect(() => {
+    let interval;
+    if (keyValue.ttl > 0) {
+      interval = setInterval(() => {
+        if (keyValue.ttl > 0) {
+          keyValue.ttl -= 1;
+        } else {
+          clearInterval(interval);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
   });
 
   /** @param {any} event */
@@ -343,10 +343,20 @@
   /** @param {number} ttl */
   function formatTTL(ttl) {
     if (ttl === -1) return "Persistent";
-    if (ttl === -2) return "Expired";
-    if (ttl < 60) return `${ttl}s`;
-    if (ttl < 3600) return `${Math.floor(ttl / 60)}m ${ttl % 60}s`;
-    return `${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m`;
+    if (ttl === -2 || ttl <= 0) return "Expired";
+
+    const days = Math.floor(ttl / 86400);
+    const hours = Math.floor((ttl % 86400) / 3600);
+    const minutes = Math.floor((ttl % 3600) / 60);
+    const seconds = ttl % 60;
+
+    if (ttl >= 86400) {
+      return `${days}d ${hours}h ${seconds}s`;
+    }
+    if (ttl >= 3600) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    }
+    return `${minutes}m ${seconds}s`;
   }
 
   /** @param {number} bytes */
@@ -713,7 +723,7 @@
             spellcheck="false"
           ></div>
         {:else}
-          <div class="placeholder-text">Loading...</div>
+          <div class="placeholder-text"></div>
         {/if}
       </div>
     {:else}

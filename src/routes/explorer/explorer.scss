@@ -1,4 +1,3 @@
-
 // Variables
 $bg-primary: #1a1a1a;
 $bg-secondary: #232323;
@@ -103,7 +102,8 @@ $border-color: #333;
     color: #10b981; // Emerald-500
     background-color: rgba(#10b981, 0.1);
 
-    &:hover, &.active {
+    &:hover,
+    &.active {
       background-color: #10b981;
       color: white;
       border-color: #10b981;
@@ -133,7 +133,7 @@ $border-color: #333;
   animation: dropdownFade 0.2s ease;
 
   &::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -5px;
     right: 10px;
@@ -180,12 +180,24 @@ $border-color: #333;
       text-transform: uppercase;
       flex-shrink: 0;
 
-      &.tag-string { background-color: #3b82f6; }
-      &.tag-hash { background-color: #a855f7; }
-      &.tag-list { background-color: #06b6d4; }
-      &.tag-set { background-color: #f59e0b; }
-      &.tag-zset { background-color: #ec4899; }
-      &.tag-stream { background-color: #f43f5e; }
+      &.tag-string {
+        background-color: #3b82f6;
+      }
+      &.tag-hash {
+        background-color: #a855f7;
+      }
+      &.tag-list {
+        background-color: #06b6d4;
+      }
+      &.tag-set {
+        background-color: #f59e0b;
+      }
+      &.tag-zset {
+        background-color: #ec4899;
+      }
+      &.tag-stream {
+        background-color: #f43f5e;
+      }
     }
 
     .type-label {
@@ -195,8 +207,14 @@ $border-color: #333;
 }
 
 @keyframes dropdownFade {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 // Search Box
@@ -255,7 +273,6 @@ $border-color: #333;
   }
 }
 
-
 // Tree View
 .tree-node {
   display: flex;
@@ -298,7 +315,7 @@ $border-color: #333;
   }
 
   .tree-tag {
-    font-family: 'Monaco', 'Menlo', monospace;
+    font-family: "Monaco", "Menlo", monospace;
     font-size: 0.5rem;
     padding: 4px 6px; // Vertical padding increased by 2px (total 4px)
     border-radius: 3px;
@@ -369,7 +386,6 @@ $border-color: #333;
   opacity: 0.7;
 }
 
-
 // --- Scoped Scrollbar Handling ---
 
 // Shared SimpleBar overrides for both sidebar and value panel
@@ -381,7 +397,7 @@ $border-color: #333;
     // Standard hiding
     scrollbar-width: none;
     -ms-overflow-style: none;
-    
+
     // Webkit hiding
     &::-webkit-scrollbar {
       display: none;
@@ -398,7 +414,7 @@ $border-color: #333;
     border-left: 1px solid #333;
     z-index: 50;
   }
-  
+
   :global(.simplebar-track.simplebar-horizontal) {
     display: none;
   }
@@ -408,20 +424,22 @@ $border-color: #333;
     background-color: #666;
     border-radius: 4px;
     opacity: 0.8;
-    left: 4px; right: 0px; top: 2px; bottom: 2px;
+    left: 4px;
+    right: 0px;
+    top: 2px;
+    bottom: 2px;
     transition: opacity 0.2s, background-color 0.2s;
   }
 
   :global(.simplebar-scrollbar.simplebar-visible:before) {
     opacity: 1;
   }
-  
+
   :global(.simplebar-scrollbar:hover:before) {
     background-color: #aaa;
     opacity: 1;
   }
 }
-
 
 .keys-list {
   flex: 1 1 auto;
@@ -536,7 +554,9 @@ $border-color: #333;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .db-dropdown {
@@ -636,12 +656,13 @@ $border-color: #333;
   display: block;
   flex-shrink: 0;
 
-  &:hover, &.active {
+  &:hover,
+  &.active {
     background-color: $accent-color;
   }
 
   &::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -2px;
@@ -698,7 +719,7 @@ $border-color: #333;
     .value {
       font-size: 10px;
       color: #ffffff;
-      font-family: 'Monaco', 'Menlo', monospace;
+      font-family: "Monaco", "Menlo", monospace;
       line-height: 1;
       margin: 0;
 
@@ -710,7 +731,7 @@ $border-color: #333;
 }
 
 .type-badge {
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: "Monaco", "Menlo", monospace;
   font-size: 0.55rem;
   padding: 4px 6px;
   border-radius: 3px;
@@ -758,7 +779,7 @@ $border-color: #333;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  
+
   @extend %custom-scrollbar;
 
   .editor-container {
@@ -766,7 +787,7 @@ $border-color: #333;
     min-height: 100%;
     outline: none;
     counter-reset: line-number;
-    font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
+    font-family: "Monaco", "Menlo", "Cascadia Code", monospace;
     font-size: 13px;
     line-height: 20px;
     color: #ffffff;
@@ -780,7 +801,6 @@ $border-color: #333;
       opacity: 0.8;
       border-bottom: 1px solid rgba($border-color, 0.1);
       margin-bottom: 4px;
-
     }
 
     // Each logical line should be a div (browser default for contenteditable)
@@ -788,12 +808,13 @@ $border-color: #333;
       counter-increment: line-number;
       position: relative;
       padding-left: 36px; // Space for gutter
+      padding-right: 10px; // User request: more space on the right
       min-height: 20px;
       white-space: pre-wrap;
       word-break: break-all;
       content-visibility: auto; // Performance boost for long documents
       contain-intrinsic-size: 1px 20px;
-      
+
       // Vertical dash for wrapped parts of this logical line
       background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="20"><text x="26" y="11" fill="rgba(255,255,255,0.15)" font-family="monospace" font-size="10" text-anchor="middle">-</text></svg>');
       background-repeat: repeat-y;
@@ -824,7 +845,7 @@ $border-color: #333;
         background-color: rgba(#ffffff, 0.02);
       }
     }
-    
+
     // Fallback for empty/single line content
     &[contenteditable="true"]:empty:before {
       content: "1";
