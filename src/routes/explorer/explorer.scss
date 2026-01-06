@@ -24,6 +24,7 @@ $border-color: #333;
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-height: 100%; // Ensure it doesn't grow past layout
   overflow: hidden;
   flex-shrink: 0;
   border-right: 1px solid $border-color;
@@ -173,7 +174,7 @@ $border-color: #333;
       align-items: center;
       justify-content: center;
       font-size: 0.65rem;
-      font-weight: 800;
+      font-weight: 400;
       border-radius: 4px;
       color: white;
       text-transform: uppercase;
@@ -270,10 +271,10 @@ $border-color: #333;
   border: none;
   color: $text-secondary;
   padding: 0.3rem 0.6rem;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   border-radius: 4px;
   cursor: pointer;
-  white-space: nowrap; /* Keep on single line */
+  white-space: nowrap;
   overflow: hidden;
   transition: background-color 0.2s, color 0.2s;
 
@@ -298,11 +299,11 @@ $border-color: #333;
 
   .tree-tag {
     font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 0.55rem;
+    font-size: 0.5rem;
     padding: 4px 6px; // Vertical padding increased by 2px (total 4px)
     border-radius: 3px;
     margin-right: 0.6rem;
-    font-weight: 700;
+    font-weight: 600;
     min-width: 40px;
     text-align: center;
     color: white; // Solid white text
@@ -423,7 +424,8 @@ $border-color: #333;
 
 
 .keys-list {
-  flex: 1 1 0;
+  flex: 1 1 auto;
+  height: 0; // Essential for flex-scroll to work robustly
   min-height: 0;
   position: relative;
   overflow-y: auto; /* SimpleBar will hide this */
@@ -442,11 +444,11 @@ $border-color: #333;
 
 .value-panel {
   flex: 1;
-  padding: 1.5rem;
+  padding: 0;
   position: relative;
-  overflow: hidden; // Parent hides overflow
-  
-  @extend %custom-scrollbar;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; // Panel itself doesn't scroll
 }
 
 // Sidebar Footer
@@ -653,15 +655,57 @@ $border-color: #333;
   align-items: center;
   gap: 1rem;
   padding: 0.9rem 1rem;
-  margin: -1.5rem -1.5rem 1rem -1.5rem; // Offset parent padding
   background-color: $bg-secondary;
-  border-bottom: 1px solid $border-color;
+  border-bottom: 1px solid rgba($border-color, 0.4);
+  flex-shrink: 0; // Don't shrink
+  z-index: 10;
 
   h2 {
     margin: 0;
     font-size: 0.75rem;
     color: $text-primary;
     word-break: break-all;
+  }
+}
+
+.metadata-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2px 1rem 0;
+  background-color: rgba(#ffffff, 0.02);
+  border-bottom: 1px solid rgba($border-color, 0.2);
+  flex-shrink: 0;
+  height: 24px; // Slightly taller for better breathing space
+
+  .meta-item {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline; // Align text by their baseline for perfect "straigthness"
+    gap: 4px;
+
+    .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: rgba($text-secondary, 0.5);
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      line-height: 1;
+      margin: 0;
+    }
+
+    .value {
+      font-size: 10px;
+      color: #ffffff;
+      font-family: 'Monaco', 'Menlo', monospace;
+      line-height: 1;
+      margin: 0;
+
+      &.persistent {
+        color: #4ade80;
+      }
+    }
   }
 }
 
@@ -707,18 +751,109 @@ $border-color: #333;
 }
 
 .value-content {
-  background-color: $bg-secondary;
-  border-radius: 8px;
-  padding: 1rem;
+  background: transparent;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  
+  @extend %custom-scrollbar;
 
-  pre {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: $text-primary;
-    font-size: 0.9rem;
-    font-family: 'Monaco', 'Menlo', monospace;
-    user-select: text; // Allow selection for key values
+  .editor-container {
+    width: 100%;
+    min-height: 100%;
+    outline: none;
+    counter-reset: line-number;
+    font-family: 'Monaco', 'Menlo', 'Cascadia Code', monospace;
+    font-size: 13px;
+    line-height: 20px;
+    color: #ffffff;
+    padding: 0;
+
+    // Each logical line should be a div (browser default for contenteditable)
+    div {
+      counter-increment: line-number;
+      position: relative;
+      padding-left: 36px; // Space for gutter
+      min-height: 20px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      
+      // Vertical dash for wrapped parts of this logical line
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="20"><text x="26" y="11" fill="rgba(255,255,255,0.15)" font-family="monospace" font-size="10" text-anchor="middle">-</text></svg>');
+      background-repeat: repeat-y;
+      background-size: 36px 20px;
+      background-position: 0 20px; // Start dash from 2nd physical line of this block
+
+      &::before {
+        content: counter(line-number);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 30px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 12px;
+        color: rgba($text-secondary, 0.4);
+        font-size: 11px;
+        background-color: transparent;
+        z-index: 2;
+        user-select: none;
+        pointer-events: none;
+        border-right: 1px solid rgba($border-color, 0.3);
+      }
+
+      &:hover {
+        background-color: rgba(#ffffff, 0.02);
+      }
+    }
+    
+    // Fallback for empty/single line content
+    &[contenteditable="true"]:empty:before {
+      content: "1";
+      position: absolute;
+      left: 0;
+      width: 30px;
+      color: rgba($text-secondary, 0.4);
+      padding-right: 12px;
+      text-align: right;
+      font-size: 11px;
+    }
+  }
+}
+
+.save-action {
+  margin-left: auto;
+  background-color: $accent-color;
+  color: white;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  &:hover {
+    background-color: lighten($accent-color, 10%);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
   }
 }
 

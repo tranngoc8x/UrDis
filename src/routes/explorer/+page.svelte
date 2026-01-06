@@ -10,7 +10,13 @@
   // State Management
   let keysList = $state([]);
   let selectedKey = $state("");
-  let keyValue = $state({ type: null, value: null });
+  let keyValue = $state({
+    key_type: null,
+    value: null,
+    ttl: -1,
+    memory: 0,
+    encoding: "",
+  });
   let valueCache = new Map(); // Cache for near-instant display
 
   let searchInput = $state("");
@@ -24,8 +30,19 @@
   let currentCursor = $state(0);
   let isScanning = $state(true);
 
+  let editableContent = $state("");
+  let originalContent = $state("");
+  let isModified = $derived(editableContent !== originalContent);
+  /** @type {HTMLElement|null} */
+  let editorNode = $state(null);
+
+  /** @type {any} */
   let valueLoadingTimeout;
   let isLoadingValue = $state(false);
+
+  let selectedKeyType = $derived(
+    keysList.find((k) => k.name === selectedKey)?.key_type || ""
+  );
 
   // Svelte action for SimpleBar
   /** @param {HTMLElement} node */
@@ -156,6 +173,7 @@
     fetchKeys(true);
   }
 
+  /** @param {KeyboardEvent} event */
   function handleSearch(event) {
     if (event.key === "Enter") {
       executeSearch();
@@ -176,10 +194,14 @@
     if (valueCache.has(cacheKey)) {
       keyValue = valueCache.get(cacheKey);
     } else {
-      // Don't clear keyValue immediately if we're swapping,
-      // but if it's a completely new fetch, we can show a placeholder if we want.
-      // For now, let's keep the old value for 100ms or clear it if it's been too long.
-      // keyValue = { type: null, value: null };
+      // Clear current value to show loading state
+      keyValue = {
+        key_type: null,
+        value: null,
+        ttl: -1,
+        memory: 0,
+        encoding: "",
+      };
 
       // Only show loading if it takes more than 100ms
       clearTimeout(valueLoadingTimeout);
@@ -213,11 +235,90 @@
   }
 
   // UI Actions
+
+  $effect(() => {
+    if (keyValue.value !== null) {
+      const formatted = formatKeyValue(keyValue.value);
+      originalContent = formatted;
+      editableContent = formatted;
+
+      // Update editor DOM manually to maintain line wrappers for CSS counters
+      if (editorNode) {
+        editorNode.innerHTML = formatted
+          .split("\n")
+          .map((line) => `<div>${line || "<br>"}</div>`)
+          .join("");
+      }
+    }
+  });
+
+  /** @param {any} event */
+  function handleInput(event) {
+    // Extract plain text while maintaining logical lines (divs)
+    editableContent = event.target.innerText.replace(/\n$/, "");
+  }
+
+  async function saveValue() {
+    if (!isModified) return;
+
+    try {
+      const config = $activeConfig;
+      if (!config) return;
+
+      isLoadingValue = true;
+      await invoke("set_key_value", {
+        config,
+        key: selectedKey,
+        db: selectedDb,
+        value: editableContent,
+      });
+
+      // Update cache and original state
+      const updatedValue = {
+        ...keyValue,
+        value: { ...keyValue.value, value: editableContent },
+      };
+      keyValue = updatedValue;
+      originalContent = editableContent;
+      valueCache.set(`${selectedDb}:${selectedKey}`, updatedValue);
+
+      console.log("Value saved successfully");
+    } catch (error) {
+      console.error("Failed to save value:", error);
+      alert("Failed to save value: " + error);
+    } finally {
+      isLoadingValue = false;
+    }
+  }
+
+  // Formatting helpers for metadata
+  function formatTTL(ttl) {
+    if (ttl === -1) return "Persistent";
+    if (ttl === -2) return "Expired";
+    if (ttl < 60) return `${ttl}s`;
+    if (ttl < 3600) return `${Math.floor(ttl / 60)}m ${ttl % 60}s`;
+    return `${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m`;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
   async function disconnect() {
     activeConfig.set(null);
     keysList = [];
     selectedKey = "";
-    keyValue = { type: null, value: null };
+    keyValue = {
+      key_type: null,
+      value: null,
+      ttl: -1,
+      memory: 0,
+      encoding: "",
+    };
     valueCache.clear();
     clearTimeout(valueLoadingTimeout);
     isLoadingValue = false;
@@ -229,7 +330,13 @@
     selectedDb = db;
     isDropdownOpen = false;
     selectedKey = "";
-    keyValue = { type: null, value: null };
+    keyValue = {
+      key_type: null,
+      value: null,
+      ttl: -1,
+      memory: 0,
+      encoding: "",
+    };
     expandedFolders = new Set();
     valueCache.clear();
     clearTimeout(valueLoadingTimeout);
@@ -278,6 +385,9 @@
   let filteredKeys = $derived(keysList);
   let treeResult = $derived(buildTree(filteredKeys, ":"));
   let keyTree = $derived(treeResult.tree);
+  let contentLines = $derived(
+    keyValue.value !== null ? formatKeyValue(keyValue.value).split("\n") : []
+  );
 
   $effect(() => {
     if (activePattern.trim() && filteredKeys.length > 0) {
@@ -498,19 +608,51 @@
     aria-label="Resize Sidebar"
   ></button>
 
-  <main class="value-panel" use:simplebar data-simplebar>
+  <main class="value-panel">
     {#if selectedKey}
       <div class="value-header">
-        {#if keyValue?.type}
-          <span class="type-badge tag-{keyValue.type.toLowerCase()}"
-            >{keyValue.type}</span
+        {#if selectedKeyType}
+          <span class="type-badge tag-{selectedKeyType.toLowerCase()}"
+            >{selectedKeyType.toUpperCase()}</span
           >
         {/if}
         <h2>{selectedKey}</h2>
+        {#if isModified}
+          <button
+            class="save-action"
+            onclick={saveValue}
+            disabled={isLoadingValue}
+          >
+            <i class="codicon codicon-save"></i>
+            {isLoadingValue ? "Saving..." : "Save Changes"}
+          </button>
+        {/if}
       </div>
-      <div class="value-content">
+      <div class="metadata-bar">
+        <div class="meta-item">
+          <span class="label">TTL:</span>
+          <span class="value" class:persistent={keyValue.ttl === -1}
+            >{formatTTL(keyValue.ttl)}</span
+          >
+        </div>
+        <div class="meta-item">
+          <span class="label">Memory:</span>
+          <span class="value">{formatBytes(keyValue.memory)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="label">Encoding:</span>
+          <span class="value">{keyValue.encoding}</span>
+        </div>
+      </div>
+      <div class="value-content" use:simplebar data-simplebar>
         {#if keyValue?.value !== null}
-          <pre>{formatKeyValue(keyValue)}</pre>
+          <div
+            bind:this={editorNode}
+            class="editor-container"
+            contenteditable="true"
+            oninput={handleInput}
+            spellcheck="false"
+          ></div>
         {:else}
           <div class="placeholder-text">Loading...</div>
         {/if}

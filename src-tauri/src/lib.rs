@@ -163,48 +163,82 @@ async fn list_keys(
     Ok((next_cursor, keys))
 }
 
+#[derive(Serialize)]
+pub struct RedisKeyData {
+    pub key_type: String,
+    pub value: RedisValue,
+    pub ttl: i64,
+    pub memory: i64,
+    pub encoding: String,
+}
+
 #[tauri::command]
 async fn get_key_value(
     config: RedisConfig,
     key: String,
     db: i64,
     state: State<'_, ConnectionManager>,
-) -> Result<RedisValue, String> {
+) -> Result<RedisKeyData, String> {
     let mut con = state.get_connection(&config, db).await?;
 
+    // 1. Get Key Type
     let key_type: String = redis::cmd("TYPE")
         .arg(&key)
         .query_async(&mut con)
         .await
         .map_err(|e| format!("Failed to get key type: {}", e))?;
 
-    match key_type.as_str() {
+    // 2. Get Metadata (TTL, Memory, Encoding) using pipeline
+    let mut pipe = redis::pipe();
+    pipe.cmd("TTL").arg(&key);
+    pipe.cmd("MEMORY").arg("USAGE").arg(&key);
+    pipe.cmd("OBJECT").arg("ENCODING").arg(&key);
+
+    let metadata: (i64, Option<i64>, Option<String>) = pipe
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Failed to get metadata: {}", e))?;
+
+    let ttl = metadata.0;
+    let memory = metadata.1.unwrap_or(0);
+    let encoding = metadata.2.unwrap_or_else(|| "none".to_string());
+
+    // 3. Get Value
+    let value = match key_type.as_str() {
         "string" => {
             let val: Vec<u8> = con.get(&key).await.map_err(|e| e.to_string())?;
-            Ok(RedisValue::String(val))
+            RedisValue::String(val)
         }
         "list" => {
             let val: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(|e| e.to_string())?;
-            Ok(RedisValue::List(val))
+            RedisValue::List(val)
         }
         "set" => {
             let val: Vec<Vec<u8>> = con.smembers(&key).await.map_err(|e| e.to_string())?;
-            Ok(RedisValue::Set(val))
+            RedisValue::Set(val)
         }
         "zset" => {
             let val: Vec<(Vec<u8>, f64)> = con
                 .zrange_withscores(&key, 0, -1)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(RedisValue::ZSet(val))
+            RedisValue::ZSet(val)
         }
         "hash" => {
             let val: HashMap<String, Vec<u8>> =
                 con.hgetall(&key).await.map_err(|e| e.to_string())?;
-            Ok(RedisValue::Hash(val))
+            RedisValue::Hash(val)
         }
-        _ => Ok(RedisValue::None),
-    }
+        _ => RedisValue::None,
+    };
+
+    Ok(RedisKeyData {
+        key_type,
+        value,
+        ttl,
+        memory,
+        encoding,
+    })
 }
 
 #[tauri::command]
@@ -333,6 +367,19 @@ async fn get_db_sizes(
     Ok(sizes)
 }
 
+#[tauri::command]
+async fn set_key_value(
+    config: RedisConfig,
+    key: String,
+    value: String,
+    db: i64,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+    let _: () = con.set(key, value).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -343,7 +390,8 @@ pub fn run() {
             list_keys,
             get_key_value,
             get_batch_key_values,
-            get_db_sizes
+            get_db_sizes,
+            set_key_value
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
