@@ -214,7 +214,14 @@
     const cacheKey = `${selectedDb}:${key}`;
 
     if (valueCache.has(cacheKey)) {
-      keyValue = valueCache.get(cacheKey);
+      const entry = valueCache.get(cacheKey);
+      const now = Date.now();
+      const elapsed = Math.floor((now - entry.fetchedAt) / 1000);
+
+      keyValue = {
+        ...entry,
+        ttl: entry.ttl > 0 ? Math.max(0, entry.ttl - elapsed) : entry.ttl,
+      };
     } else {
       // Clear current value to show loading state
       keyValue = {
@@ -240,10 +247,16 @@
           key,
           db: selectedDb,
         });
-        valueCache.set(cacheKey, result);
+
+        const cacheEntry = { ...result, fetchedAt: Date.now() };
+        valueCache.set(cacheKey, cacheEntry);
+
         // Only update if the selected key hasn't changed during the async operation
         if (selectedKey === key) {
-          keyValue = result;
+          keyValue = {
+            ...result,
+            ttl: result.ttl,
+          };
         }
       } catch (error) {
         console.error("Failed to get key value:", error);
