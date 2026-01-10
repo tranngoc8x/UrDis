@@ -140,19 +140,19 @@ async fn list_keys(
 
     let scan_count = if !has_pattern {
         // Listing all keys: use fixed COUNT
-        1000
+        500
     } else if current_count == 0 {
         // First fetch with pattern
-        1000
+        500
     } else if current_count < 10 {
         // Very few keys found, increase significantly
-        10000
+        5000
     } else if current_count < 50 {
         // Few keys found, increase moderately
-        5000
+        3000
     } else {
         // Enough keys found, keep stable
-        3000
+        2000
     };
 
     let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")

@@ -170,7 +170,7 @@
 
       // Auto-fetch when pattern search and not enough keys yet
       const hasPattern = activePattern && activePattern !== "*";
-      if (hasPattern && nextCursor !== 0 && keysList.length < 1000) {
+      if (hasPattern && nextCursor !== 0 && keysList.length < 500) {
         console.log(
           `[SCAN] Pattern search: auto-fetching more (${keysList.length}/1000)`
         );
