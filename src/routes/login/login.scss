@@ -1,5 +1,3 @@
-
-
 /* Layout */
 .layout {
   display: flex;
@@ -117,7 +115,7 @@
   margin-right: 26px;
 }
 .port input {
-  width: 50px;
+  width: 75px;
 }
 
 .btn-connect {
@@ -190,7 +188,7 @@
     width: 100%;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    
+
     &::-webkit-scrollbar {
       display: none;
       width: 0;
@@ -206,7 +204,7 @@
     z-index: 50;
     right: 0; /* Align to right edge */
   }
-  
+
   :global(.simplebar-track.simplebar-horizontal) {
     display: none;
   }
@@ -215,19 +213,22 @@
     background-color: #666;
     border-radius: 4px;
     opacity: 0.8;
-    left: 4px; right: 0px; top: 2px; bottom: 2px;
+    left: 4px;
+    right: 0px;
+    top: 2px;
+    bottom: 2px;
     transition: opacity 0.2s, background-color 0.2s;
   }
 
   :global(.simplebar-scrollbar.simplebar-visible:before) {
     opacity: 1;
   }
-  
+
   :global(.simplebar-scrollbar:hover:before) {
     background-color: #aaa;
     opacity: 1;
   }
-  
+
   /* SimpleBar content fix */
   :global(.simplebar-content) {
     display: flex;
@@ -406,13 +407,35 @@
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 0.75rem;
   margin-top: 1.5rem;
 }
 
-.btn-modal-cancel {
+.modal-actions-right {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-modal-delete {
   padding: 0.35rem 1.25rem;
+  background-color: transparent;
+  color: #f44336;
+  border: 1px solid #f44336;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.btn-modal-delete:hover {
+  background-color: #f44336;
+  color: white;
+}
+
+.btn-modal-cancel {
+  padding: 0.5rem 1.25rem;
   background-color: transparent;
   color: #aaa;
   border: 1px solid #333;

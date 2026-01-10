@@ -55,6 +55,16 @@
     editingIndex = null;
   }
 
+  function deleteServer() {
+    if (editingIndex !== null) {
+      savedServers.update((servers) => {
+        servers.splice(editingIndex, 1);
+        return [...servers];
+      });
+      closeNewServerModal();
+    }
+  }
+
   function createServer() {
     const host = newServer.host.trim();
     if (!host) return;
@@ -291,12 +301,18 @@
         </label>
       </div>
       <div class="modal-actions">
-        <button class="btn-modal-cancel" onclick={closeNewServerModal}
-          >Cancel</button
-        >
-        <button class="btn-modal-create" onclick={createServer}
-          >{editingIndex !== null ? "Save" : "Create"}</button
-        >
+        {#if editingIndex !== null}
+          <button class="btn-modal-delete" onclick={deleteServer}>Delete</button
+          >
+        {/if}
+        <div class="modal-actions-right">
+          <button class="btn-modal-cancel" onclick={closeNewServerModal}
+            >Cancel</button
+          >
+          <button class="btn-modal-create" onclick={createServer}
+            >{editingIndex !== null ? "Save" : "Create"}</button
+          >
+        </div>
       </div>
     </div>
   </div>
