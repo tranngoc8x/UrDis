@@ -131,11 +131,16 @@
         `[SCAN] Before: cursor=${currentCursor}, keysList.length=${keysList.length}`
       );
 
+      console.log(
+        `[DEBUG] Calling list_keys with currentCount=${keysList.length}`
+      );
+
       const results = await invoke("list_keys", {
         config,
         db: selectedDb,
         cursor: currentCursor,
         pattern: activePattern,
+        currentCount: keysList.length,
       });
 
       const nextCursor = results[0];
@@ -168,8 +173,9 @@
   // Search & Filters
   function executeSearch() {
     let query = searchInput.trim();
-    if (query && !query.includes("*")) {
-      query = `*${query}*`;
+    // Chỉ thêm * cuối nếu chưa có wildcard
+    if (query && !query.includes("*") && !query.includes("?")) {
+      query = `${query}*`;
     }
     searchInput = query;
     keysList = [];

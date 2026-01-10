@@ -130,16 +130,37 @@ async fn list_keys(
     db: i64,
     cursor: u64,
     pattern: String,
+    current_count: usize,
     state: State<'_, ConnectionManager>,
 ) -> Result<(u64, Vec<RedisKeyInfo>), String> {
     let mut con = state.get_connection(&config, db).await?;
+
+    // Dynamic COUNT only for pattern search (not for listing all keys)
+    let has_pattern = !pattern.is_empty() && pattern != "*";
+
+    let scan_count = if !has_pattern {
+        // Listing all keys: use fixed COUNT
+        1000
+    } else if current_count == 0 {
+        // First fetch with pattern
+        1000
+    } else if current_count < 10 {
+        // Very few keys found, increase significantly
+        10000
+    } else if current_count < 50 {
+        // Few keys found, increase moderately
+        5000
+    } else {
+        // Enough keys found, keep stable
+        3000
+    };
 
     let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")
         .arg(cursor)
         .arg("MATCH")
         .arg(if pattern.is_empty() { "*" } else { &pattern })
         .arg("COUNT")
-        .arg(1000)
+        .arg(scan_count)
         .query_async(&mut con)
         .await
         .map_err(|e| format!("SCAN error: {}", e))?;
