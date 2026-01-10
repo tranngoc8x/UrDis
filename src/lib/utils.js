@@ -166,6 +166,26 @@ export function buildTree(keys, separator = ":") {
     });
   });
 
+  // Sort nodes: folders first, then keys (alphabetically within each type)
+  const sortNodes = (nodes) => {
+    nodes.sort((a, b) => {
+      // Folders first
+      if (a.type === "folder" && b.type === "key") return -1;
+      if (a.type === "key" && b.type === "folder") return 1;
+      // Same type: sort alphabetically by name
+      return a.name.localeCompare(b.name);
+    });
+
+    // Recursively sort children of folders
+    nodes.forEach((node) => {
+      if (node.type === "folder" && node.children) {
+        sortNodes(node.children);
+      }
+    });
+  };
+
+  sortNodes(root);
+
   // Calculate key counts for all items
   const calculateCounts = (nodes) => {
     let total = 0;
