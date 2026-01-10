@@ -451,6 +451,7 @@
     selectedDb = db;
     isDropdownOpen = false;
     keysList = [];
+    allKeys = []; // Reset allKeys to avoid stale data
     selectedKey = "";
     keyValue = {
       key_type: null,
