@@ -10,6 +10,8 @@
   // State Management
   /** @type {any[]} */
   let keysList = $state([]);
+  /** @type {any[]} */
+  let allKeys = $state([]); // Store all keys when fully loaded
   let selectedKey = $state("");
   let keyValue = $state({
     key_type: null,
@@ -155,9 +157,26 @@
       }
 
       currentCursor = nextCursor;
+
+      // Save all keys when fully loaded (no pattern)
+      if (nextCursor === 0 && !activePattern) {
+        allKeys = [...keysList];
+        console.log(`[SCAN] All keys loaded: ${allKeys.length}`);
+      }
+
       console.log(
         `[SCAN] Updated: currentCursor=${currentCursor}, keysList.length=${keysList.length}`
       );
+
+      // Auto-fetch when pattern search and not enough keys yet
+      const hasPattern = activePattern && activePattern !== "*";
+      if (hasPattern && nextCursor !== 0 && keysList.length < 1000) {
+        console.log(
+          `[SCAN] Pattern search: auto-fetching more (${keysList.length}/1000)`
+        );
+        setTimeout(() => fetchKeys(false), 50);
+        return; // Don't set isScanning = false yet
+      }
 
       isScanning = false;
     } catch (error) {
@@ -173,12 +192,38 @@
   // Search & Filters
   function executeSearch() {
     let query = searchInput.trim();
+
+    // If all keys loaded, filter on frontend
+    if (allKeys.length > 0 && query) {
+      console.log(`[SEARCH] Filtering ${allKeys.length} keys on frontend`);
+
+      // Normalize pattern for JS regex
+      let pattern = query;
+      if (!pattern.includes("*") && !pattern.includes("?")) {
+        pattern = `${pattern}*`;
+      }
+
+      // Convert Redis pattern to regex
+      const regexPattern = pattern.replace(/\*/g, ".*").replace(/\?/g, ".");
+      const regex = new RegExp(`^${regexPattern}$`, "i");
+
+      // Filter allKeys
+      keysList = allKeys.filter((key) => regex.test(key.name));
+      activePattern = query;
+      searchInput = pattern;
+
+      console.log(`[SEARCH] Found ${keysList.length} matching keys`);
+      return;
+    }
+
+    // Otherwise, send pattern to backend for scan
     // Chỉ thêm * cuối nếu chưa có wildcard
     if (query && !query.includes("*") && !query.includes("?")) {
       query = `${query}*`;
     }
     searchInput = query;
     keysList = [];
+    allKeys = []; // Clear allKeys when starting new backend scan
     activePattern = query;
     fetchKeys(true);
   }
@@ -538,7 +583,13 @@
               class="btn-clear-search"
               onclick={() => {
                 searchInput = "";
-                executeSearch();
+                // Restore all keys if they were loaded
+                if (allKeys.length > 0) {
+                  keysList = [...allKeys];
+                  activePattern = "";
+                } else {
+                  executeSearch();
+                }
               }}
               title="Clear search"
             >
