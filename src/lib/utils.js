@@ -166,17 +166,20 @@ export function buildTree(keys, separator = ":") {
     });
   });
 
-  // Calculate inclusive key counts for folders
+  // Calculate key counts for all items
   const calculateCounts = (nodes) => {
     let total = 0;
-    nodes.forEach((node) => {
+
+    for (const node of nodes) {
       if (node.type === "key") {
         total += 1;
       } else {
-        node.keyCount = calculateCounts(node.children);
-        total += node.keyCount;
+        const folderCount = calculateCounts(node.children);
+        node.keyCount = folderCount;
+        total += folderCount;
       }
-    });
+    }
+
     return total;
   };
 

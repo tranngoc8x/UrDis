@@ -117,8 +117,6 @@
     }
   }
 
-  let scanBuffer = [];
-
   async function fetchKeys(isInitial = true) {
     const config = $activeConfig;
     if (!config) return;
@@ -127,8 +125,11 @@
       if (isInitial) {
         currentCursor = 0;
         keysList = [];
-        scanBuffer = [];
       }
+
+      console.log(
+        `[SCAN] Before: cursor=${currentCursor}, keysList.length=${keysList.length}`
+      );
 
       const results = await invoke("list_keys", {
         config,
@@ -140,26 +141,20 @@
       const nextCursor = results[0];
       const newKeys = results[1];
 
+      console.log(
+        `[SCAN] After: nextCursor=${nextCursor}, newKeys.length=${newKeys?.length || 0}`
+      );
+
       if (newKeys && newKeys.length > 0) {
-        scanBuffer.push(...newKeys);
+        keysList = [...keysList, ...newKeys];
       }
 
       currentCursor = nextCursor;
+      console.log(
+        `[SCAN] Updated: currentCursor=${currentCursor}, keysList.length=${keysList.length}`
+      );
 
-      if (nextCursor !== 0) {
-        // Update UI occasionally if buffer is large enough
-        if (scanBuffer.length >= 20000) {
-          keysList = [...keysList, ...scanBuffer];
-          scanBuffer = [];
-        }
-        // Yield to the main thread before continuing
-        setTimeout(() => fetchKeys(false), 50);
-      } else {
-        // Final update
-        keysList = [...keysList, ...scanBuffer];
-        scanBuffer = [];
-        isScanning = false;
-      }
+      isScanning = false;
     } catch (error) {
       console.error("Failed to fetch keys:", error);
       isScanning = false;
@@ -485,8 +480,7 @@
 </script>
 
 {#snippet renderTree(nodes, depth = 0, parentPath = "")}
-  {@const visibleNodes = nodes.slice(0, 200)}
-  {#each visibleNodes as node}
+  {#each nodes as node}
     {@const currentPath = parentPath ? `${parentPath}:${node.name}` : node.name}
     <div class="tree-node" style="padding-left: {depth * 12}px">
       {#if node.type === "folder"}
@@ -517,11 +511,6 @@
       {/if}
     </div>
   {/each}
-  {#if nodes.length > 200}
-    <div class="limit-info" style="padding-left: {depth * 12 + 20}px">
-      Showing 200 of {nodes.length} items...
-    </div>
-  {/if}
 {/snippet}
 
 <div class="layout">

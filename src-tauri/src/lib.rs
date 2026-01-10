@@ -139,7 +139,7 @@ async fn list_keys(
         .arg("MATCH")
         .arg(if pattern.is_empty() { "*" } else { &pattern })
         .arg("COUNT")
-        .arg(5000)
+        .arg(1000)
         .query_async(&mut con)
         .await
         .map_err(|e| format!("SCAN error: {}", e))?;
