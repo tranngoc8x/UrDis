@@ -20,10 +20,58 @@
   let isSaving = $state(false);
   let hasMore = $state(true);
 
+  // Filter states
+  let showFilter = $state(false);
+  let searchTarget = $state("both"); // "field", "value", "both"
+  let searchCondition = $state("contains"); // "contains", "begins", "ends", "glob"
+  let searchText = $state("");
+
   // Computed: has changes?
   let hasChanges = $derived(
     editingFieldName !== originalFieldName || fieldValue !== originalFieldValue
   );
+
+  // Computed: filtered fields
+  let filteredFields = $derived(
+    !searchText.trim()
+      ? fields
+      : fields.filter((field) => {
+          const fieldName = field.toLowerCase();
+          const fieldVal = (fieldValues[field] || "").toLowerCase();
+          const search = searchText.toLowerCase();
+
+          let matchField = false;
+          let matchValue = false;
+
+          if (searchTarget === "field" || searchTarget === "both") {
+            matchField = applyCondition(fieldName, search, searchCondition);
+          }
+          if (searchTarget === "value" || searchTarget === "both") {
+            matchValue = applyCondition(fieldVal, search, searchCondition);
+          }
+
+          return searchTarget === "both"
+            ? matchField || matchValue
+            : matchField || matchValue;
+        })
+  );
+
+  function applyCondition(text, search, condition) {
+    switch (condition) {
+      case "contains":
+        return text.includes(search);
+      case "begins":
+        return text.startsWith(search);
+      case "ends":
+        return text.endsWith(search);
+      case "glob":
+        // Simple glob: * wildcard
+        const pattern = search.replace(/\*/g, ".*");
+        return new RegExp(`^${pattern}$`).test(text);
+      default:
+        return false;
+    }
+  }
 
   // Fetch fields với HSCAN
   async function fetchFields(isInitial = true) {
@@ -270,27 +318,32 @@
 <div class="hash-editor">
   <!-- Fields list -->
   <div class="fields-panel">
-    <div class="fields-header">
-      <span class="fields-count"
-        >{fields.length} field{fields.length !== 1 ? "s" : ""}</span
-      >
-      <button class="btn-add" onclick={addField} title="Add field">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      </button>
-    </div>
+    {#if showFilter}
+      <div class="filter-header">
+        <div class="filter-group">
+          <select bind:value={searchTarget}>
+            <option value="field">Field Name</option>
+            <option value="value">Field Value</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select bind:value={searchCondition}>
+            <option value="contains">Contains</option>
+            <option value="begins">Begins With</option>
+            <option value="ends">Ends With</option>
+            <option value="glob">Matched Glob</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <input
+            type="text"
+            bind:value={searchText}
+            placeholder="Enter search..."
+          />
+        </div>
+      </div>
+    {/if}
     <div class="fields-list">
       <table class="fields-table">
         <thead>
@@ -300,7 +353,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each fields as field}
+          {#each filteredFields as field}
             <tr
               class="field-row"
               class:selected={field === selectedField}
@@ -324,6 +377,50 @@
           {isLoading ? "Loading..." : "Load More"}
         </button>
       {/if}
+    </div>
+    <div class="fields-footer">
+      <div class="footer-left">
+        <button class="btn-add" onclick={addField} title="Add field">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button
+          class="btn-filter"
+          onclick={() => (showFilter = !showFilter)}
+          title="Toggle filter"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+        </button>
+      </div>
+      <span class="fields-count"
+        >{filteredFields.length}/{fields.length} field{fields.length !== 1
+          ? "s"
+          : ""}</span
+      >
     </div>
   </div>
 
@@ -376,24 +473,78 @@
     border-right: 1px solid #333;
   }
 
-  .fields-header {
+  .filter-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #232323;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+  }
+
+  .filter-group {
+    display: flex;
+  }
+
+  .filter-group label {
+    font-size: 0.65rem;
+    color: #888;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .filter-group select,
+  .filter-group input {
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-family: "Monaco", "Menlo", monospace;
+  }
+
+  .filter-group select:focus,
+  .filter-group input:focus {
+    outline: none;
+    border-color: #4a9eff;
+  }
+
+  .fields-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .fields-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: 0.1rem 1rem;
     background: #232323;
-    border-bottom: 1px solid #333;
+    border-top: 1px solid #333;
+    flex-shrink: 0;
+  }
+
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.1rem 0;
   }
 
   .fields-count {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: #aaa;
     font-weight: 500;
   }
 
-  .btn-add {
-    width: 24px;
-    height: 24px;
+  .btn-add,
+  .btn-filter {
+    width: 20px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -403,17 +554,13 @@
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
+    padding: 1px 3px;
   }
 
-  .btn-add:hover {
+  .btn-add:hover,
+  .btn-filter:hover {
     background: #4a9eff;
     color: white;
-  }
-
-  .fields-list {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
   }
 
   .fields-table {
