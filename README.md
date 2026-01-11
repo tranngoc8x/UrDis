@@ -2,15 +2,19 @@
 
 A modern, high-performance Redis Explorer built with **Tauri** and **SvelteKit**.
 
+*Inspired by [Medis](https://github.com/luin/medis), reimagined with modern web technologies.*
+
 ## Features
 
-- **Tree View Navigation** - Browse Redis keys organized in a hierarchical tree structure with folder-like navigation
+- **Tree View Navigation** - Browse Redis keys organized in a hierarchical tree structure
 - **All Data Types Supported** - View and edit String, Hash, List, Set, Sorted Set (ZSet), and Stream
 - **Live TTL Countdown** - Real-time countdown display for keys with expiration
-- **In-place Value Editing** - Edit key values directly with syntax highlighting and save changes
+- **In-place Value Editing** - Edit key values directly with line numbers
 - **Multi-Database Support** - Quickly switch between all 16 Redis databases with key counts
+- **Server Management** - Save and manage multiple Redis server connections
+- **Smart Search** - Find keys with pattern matching support
+- **Incremental Scan** - Progressive key loading for large databases without blocking
 - **Smart Caching** - Intelligent value caching for near-instant key switching
-- **Incremental Scan** - Progressive key loading with SCAN for large databases without blocking
 - **Resizable Sidebar** - Adjustable panel width for comfortable browsing
 - **Memory & Encoding Info** - View memory usage and internal encoding for each key
 
@@ -19,6 +23,7 @@ A modern, high-performance Redis Explorer built with **Tauri** and **SvelteKit**
 - **Frontend**: [SvelteKit](https://kit.svelte.dev/) + [Svelte 5](https://svelte.dev/)
 - **Backend**: [Tauri 2](https://tauri.app/) + [Rust](https://www.rust-lang.org/)
 - **Redis Client**: [redis-rs](https://github.com/redis-rs/redis-rs) with Tokio async runtime
+- **UI Components**: [SimpleBar](https://github.com/Grsmto/simplebar) for custom scrollbars
 
 ## Prerequisites
 
@@ -58,26 +63,45 @@ A modern, high-performance Redis Explorer built with **Tauri** and **SvelteKit**
 ## Usage
 
 1. Launch the application
-2. Enter your Redis connection details (host, port, password)
+2. Enter your Redis connection details (host, port, password) or select a saved server
 3. Click **Connect** to establish connection
 4. Browse keys in the sidebar tree view
-5. Click on any key to view/edit its value
-6. Use the database selector at the bottom to switch databases
+5. Use search box to filter keys
+6. Click on any key to view/edit its value
+7. Use the database selector at the bottom to switch databases
+
+## Security
+
+UrDis uses **Tauri Plugin Store** to securely store Redis connection information:
+
+- **Backend Storage**: Server credentials are stored in the Rust backend, not accessible via browser DevTools
+- **OS-Level Protection**: Connection data is saved in the application data directory with OS file permissions
+- **No Plaintext in Browser**: Passwords and credentials are never exposed in browser localStorage
 
 ## Project Structure
 
 ```
 urdis/
-├── src/                    # SvelteKit frontend
+├── src/                     # SvelteKit frontend
 │   ├── routes/
-│   │   ├── login/          # Connection page
-│   │   └── explorer/       # Main explorer interface
-│   └── lib/                # Shared utilities & stores
-├── src-tauri/              # Tauri/Rust backend
+│   │   ├── login/           # Connection page
+│   │   ├── explorer/        # Main explorer interface
+│   │   └── +layout.svelte   # Root layout
+│   ├── lib/                 # Shared utilities & stores
+│   │   ├── stores.js        # Svelte stores
+│   │   ├── secureStore.js   # Tauri Store wrapper for secure storage
+│   │   ├── utils.js         # Helper functions
+│   │   └── actions.js       # Svelte actions
+│   └── styles/              # Centralized styles
+│       ├── global.scss      # Global styles
+│       ├── layout.scss      # Layout styles
+│       ├── login.scss       # Login page styles
+│       └── explorer.scss    # Explorer page styles
+├── src-tauri/               # Tauri/Rust backend
 │   └── src/
-│       ├── lib.rs          # Main library & commands
-│       └── main.rs         # Application entry
-└── static/                 # Static assets
+│       ├── lib.rs           # Main library & commands
+│       └── main.rs          # Application entry
+└── static/                  # Static assets
 ```
 
 ## License
