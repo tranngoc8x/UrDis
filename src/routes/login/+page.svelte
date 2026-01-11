@@ -319,5 +319,5 @@
 {/if}
 
 <style lang="scss">
-  @import "./login.scss";
+  @import "../../styles/login.scss";
 </style>

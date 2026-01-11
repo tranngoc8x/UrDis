@@ -1,6 +1,6 @@
 <script>
   import { activeConfig } from "$lib/stores.js";
-  import "./layout.scss";
+  import "../styles/layout.scss";
 </script>
 
 {#if $activeConfig}

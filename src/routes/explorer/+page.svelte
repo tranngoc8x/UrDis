@@ -795,5 +795,5 @@
 </div>
 
 <style lang="scss">
-  @import "./explorer.scss";
+  @import "../../styles/explorer.scss";
 </style>
