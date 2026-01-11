@@ -442,6 +442,152 @@ async fn set_key_value(
     Ok(())
 }
 
+// ==================== Hash Commands ====================
+
+#[tauri::command]
+async fn hash_scan(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    cursor: u64,
+    count: usize,
+    state: State<'_, ConnectionManager>,
+) -> Result<(u64, Vec<String>), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    // HSCAN returns (cursor, [field1, value1, field2, value2, ...])
+    let result: (u64, Vec<String>) = redis::cmd("HSCAN")
+        .arg(&key)
+        .arg(cursor)
+        .arg("COUNT")
+        .arg(count)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HSCAN error: {}", e))?;
+
+    // Extract only field names (every even index: 0, 2, 4, ...)
+    let fields: Vec<String> = result.1.iter().step_by(2).cloned().collect();
+
+    Ok((result.0, fields))
+}
+
+#[tauri::command]
+async fn hash_get_field(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    field: String,
+    state: State<'_, ConnectionManager>,
+) -> Result<Option<String>, String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    redis::cmd("HGET")
+        .arg(&key)
+        .arg(&field)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HGET error: {}", e))
+}
+
+#[tauri::command]
+async fn hash_set_field(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    field: String,
+    value: String,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    let _: () = redis::cmd("HSET")
+        .arg(&key)
+        .arg(&field)
+        .arg(&value)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HSET error: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn hash_add_field(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    field: String,
+    state: State<'_, ConnectionManager>,
+) -> Result<bool, String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    let created: i32 = redis::cmd("HSETNX")
+        .arg(&key)
+        .arg(&field)
+        .arg("New Member")
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HSETNX error: {}", e))?;
+
+    Ok(created == 1)
+}
+
+#[tauri::command]
+async fn hash_rename_field(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    old_field: String,
+    new_field: String,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    // Get current value
+    let value: String = redis::cmd("HGET")
+        .arg(&key)
+        .arg(&old_field)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HGET error: {}", e))?;
+
+    // Transaction: HDEL old + HSET new
+    let _: () = redis::pipe()
+        .atomic()
+        .cmd("HDEL")
+        .arg(&key)
+        .arg(&old_field)
+        .cmd("HSET")
+        .arg(&key)
+        .arg(&new_field)
+        .arg(&value)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("Rename transaction error: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn hash_delete_field(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    field: String,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    let _: () = redis::cmd("HDEL")
+        .arg(&key)
+        .arg(&field)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HDEL error: {}", e))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -454,7 +600,13 @@ pub fn run() {
             get_key_value,
             get_batch_key_values,
             get_db_sizes,
-            set_key_value
+            set_key_value,
+            hash_scan,
+            hash_get_field,
+            hash_set_field,
+            hash_add_field,
+            hash_rename_field,
+            hash_delete_field,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

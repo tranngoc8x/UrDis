@@ -5,6 +5,7 @@
   import { activeConfig } from "$lib/stores.js";
   import { resizeWindow, formatKeyValue, buildTree } from "$lib/utils.js";
   import SimpleBar from "simplebar";
+  import HashEditor from "./HashEditor.svelte";
   import "simplebar/dist/simplebar.css";
 
   // State Management
@@ -773,19 +774,29 @@
           <span class="value">{keyValue.encoding}</span>
         </div>
       </div>
-      <div class="value-content" use:simplebar data-simplebar>
-        {#if keyValue?.value !== null}
-          <div
-            bind:this={editorNode}
-            class="editor-container"
-            contenteditable="true"
-            oninput={handleInput}
-            spellcheck="false"
-          ></div>
-        {:else}
-          <div class="placeholder-text"></div>
-        {/if}
-      </div>
+      {#if keyValue.key_type === "hash"}
+        <div class="hash-container">
+          <HashEditor
+            {selectedKey}
+            {selectedDb}
+            on:refresh={() => selectKey(selectedKey)}
+          />
+        </div>
+      {:else}
+        <div class="value-content" use:simplebar data-simplebar>
+          {#if keyValue?.value !== null}
+            <div
+              bind:this={editorNode}
+              class="editor-container"
+              contenteditable="true"
+              oninput={handleInput}
+              spellcheck="false"
+            ></div>
+          {:else}
+            <div class="placeholder-text"></div>
+          {/if}
+        </div>
+      {/if}
     {:else}
       <div class="placeholder-text">
         Select a key from the sidebar to view its value

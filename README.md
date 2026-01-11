@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="static/icon.png" alt="UrDis Logo" width="128" height="128">
+</p>
+
 # UrDis
 
 A modern, high-performance Redis Explorer built with **Tauri** and **SvelteKit**.

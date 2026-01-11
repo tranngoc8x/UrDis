@@ -771,6 +771,14 @@ $border-color: #333;
   }
 }
 
+.hash-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .value-content {
   background: transparent;
   flex: 1;
