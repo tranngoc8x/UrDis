@@ -446,6 +446,7 @@ async fn set_key_value(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ConnectionManager::default())
         .invoke_handler(tauri::generate_handler![
             connect_redis,

@@ -1,4 +1,9 @@
 import { writable } from "svelte/store";
+import {
+  loadServers,
+  saveServers,
+  migrateFromLocalStorage,
+} from "./secureStore.js";
 
 // Cấu hình Redis đang kết nối
 export const activeConfig = writable(null);
@@ -7,28 +12,38 @@ export const activeConfig = writable(null);
 function createSavedServersStore() {
   const { subscribe, set, update } = writable([]);
 
-  // Load from localStorage
-  if (typeof localStorage !== "undefined") {
-    const stored = localStorage.getItem("redis_servers");
-    if (stored) {
-      set(JSON.parse(stored));
+  // Initialize: Load from Tauri Store và migrate từ localStorage nếu cần
+  (async () => {
+    try {
+      // Migration từ localStorage (chỉ chạy 1 lần)
+      await migrateFromLocalStorage();
+
+      // Load servers từ Store
+      const servers = await loadServers();
+      set(servers);
+    } catch (error) {
+      console.error("[Store] Failed to load servers:", error);
+      set([]);
     }
-  }
+  })();
 
   return {
     subscribe,
-    set: (value) => {
+    set: async (value) => {
       set(value);
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("redis_servers", JSON.stringify(value));
+      try {
+        await saveServers(value);
+      } catch (error) {
+        console.error("[Store] Failed to save servers:", error);
       }
     },
     update: (fn) => {
       update((current) => {
         const newValue = fn(current);
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("redis_servers", JSON.stringify(newValue));
-        }
+        // Async save
+        saveServers(newValue).catch((error) => {
+          console.error("[Store] Failed to update servers:", error);
+        });
         return newValue;
       });
     },
@@ -39,9 +54,10 @@ function createSavedServersStore() {
         );
         if (!exists) {
           const newServers = [...servers, server];
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("redis_servers", JSON.stringify(newServers));
-          }
+          // Async save
+          saveServers(newServers).catch((error) => {
+            console.error("[Store] Failed to add server:", error);
+          });
           return newServers;
         }
         return servers;
@@ -50,9 +66,10 @@ function createSavedServersStore() {
     remove: (index) => {
       update((servers) => {
         const newServers = servers.filter((_, i) => i !== index);
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("redis_servers", JSON.stringify(newServers));
-        }
+        // Async save
+        saveServers(newServers).catch((error) => {
+          console.error("[Store] Failed to remove server:", error);
+        });
         return newServers;
       });
     },
