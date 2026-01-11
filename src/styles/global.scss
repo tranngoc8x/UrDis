@@ -10,6 +10,11 @@
 html, body {
   margin: 0;
   padding: 0;
+  overscroll-behavior: none; // Disable macOS elastic scroll
+}
+
+* {
+  overscroll-behavior: none !important; // Disable for all elements
 }
 
 // Color variables
