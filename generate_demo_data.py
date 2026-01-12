@@ -111,12 +111,77 @@ def main():
         "email": "john@example.com",
         "created_at": "2024-01-01"
     })
-    r.hset("sample:demo:product_info", mapping={
+    # Create product_info hash with 5000+ fields
+    import json
+    
+    # JSON object with ~50 items for stock field
+    stock_json = {
+        "total_quantity": 5000,
+        "available": 4850,
+        "reserved": 150,
+        "warehouse": {
+            "main": 3000,
+            "secondary": 1500,
+            "retail": 500
+        },
+        "history": [
+            {"date": f"2024-01-{i:02d}", "quantity": 5000 - i*10, "action": "restock" if i % 2 == 0 else "sale"}
+            for i in range(1, 11)
+        ],
+        "suppliers": {
+            f"supplier_{i}": {
+                "name": f"Supplier Company {i}",
+                "contact": f"contact{i}@example.com",
+                "quantity": i * 100,
+                "price": round(1299.99 - i*10, 2),
+                "delivery_time": f"{i*2} days",
+                "rating": round(4.5 - i*0.1, 2)
+            }
+            for i in range(1, 6)
+        },
+        "locations": {
+            f"location_{i}": {
+                "warehouse_id": f"WH-{i:03d}",
+                "address": f"{i*100} Main St, City {i}",
+                "quantity": i * 200,
+                "capacity": i * 300,
+                "utilization": round((i * 200) / (i * 300) * 100, 2)
+            }
+            for i in range(1, 6)
+        },
+        "categories": {
+            f"category_{i}": {
+                "name": f"Category {i}",
+                "quantity": i * 150,
+                "last_updated": f"2024-01-{i:02d}",
+                "trend": "up" if i % 2 == 0 else "down"
+            }
+            for i in range(1, 6)
+        },
+        "alerts": [
+            {
+                "id": i,
+                "type": "low_stock" if i % 3 == 0 else "reorder",
+                "message": f"Alert message {i}",
+                "priority": i % 5,
+                "timestamp": f"2024-01-12T{i:02d}:00:00Z"
+            }
+            for i in range(1, 6)
+        ]
+    }
+    
+    product_info_data = {
         "product_id": "PROD-001",
         "name": "Laptop ThinkPad X1",
         "price": "1299.99",
-        "stock": "45"
-    })
+        "stock": json.dumps(stock_json, ensure_ascii=False, indent=2)
+    }
+    
+    # Add 5000 additional fields
+    for i in range(1, 5001):
+        product_info_data[f"field_{i}"] = f"value_{i}"
+    
+    r.hset("sample:demo:product_info", mapping=product_info_data)
     count += 2
     
     # List keys (2)

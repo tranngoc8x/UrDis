@@ -26,6 +26,10 @@
   let searchCondition = $state("contains"); // "contains", "begins", "ends", "glob"
   let searchText = $state("");
 
+  // Pagination states
+  let currentPage = $state(1);
+  let itemsPerPage = $state(100);
+
   // Computed: has changes?
   let hasChanges = $derived(
     editingFieldName !== originalFieldName || fieldValue !== originalFieldValue
@@ -55,6 +59,25 @@
             : matchField || matchValue;
         })
   );
+
+  // Computed: total pages
+  let totalPages = $derived(Math.ceil(filteredFields.length / itemsPerPage));
+
+  // Computed: paginated fields
+  let paginatedFields = $derived(
+    (() => {
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      return filteredFields.slice(start, end);
+    })()
+  );
+
+  // Reset to page 1 when filter changes
+  $effect(() => {
+    if (searchText) {
+      currentPage = 1;
+    }
+  });
 
   function applyCondition(text, search, condition) {
     switch (condition) {
@@ -353,7 +376,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each filteredFields as field}
+          {#each paginatedFields as field}
             <tr
               class="field-row"
               class:selected={field === selectedField}
@@ -368,15 +391,6 @@
           {/each}
         </tbody>
       </table>
-      {#if hasMore}
-        <button
-          class="btn-load-more"
-          onclick={() => fetchFields(false)}
-          disabled={isLoading}
-        >
-          {isLoading ? "Loading..." : "Load More"}
-        </button>
-      {/if}
     </div>
     <div class="fields-footer">
       <div class="footer-left">
@@ -416,11 +430,57 @@
           </svg>
         </button>
       </div>
-      <span class="fields-count"
-        >{filteredFields.length}/{fields.length} field{fields.length !== 1
-          ? "s"
-          : ""}</span
-      >
+      <div class="footer-right">
+        {#if totalPages > 1}
+          <div class="pagination">
+            <button
+              class="btn-page"
+              onclick={() => (currentPage = Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              title="Previous page"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <span class="page-info">{currentPage} of {totalPages}</span>
+            <button
+              class="btn-page"
+              onclick={() =>
+                (currentPage = Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              title="Next page"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        {/if}
+        <span class="fields-count"
+          >{filteredFields.length} field{fields.length !== 1 ? "s" : ""}</span
+        >
+      </div>
     </div>
   </div>
 
@@ -438,8 +498,13 @@
         </div>
         <div class="input-group">
           <label>Field Value</label>
-          <textarea bind:value={fieldValue} class="field-value-input"
-          ></textarea>
+          <div
+            class="field-value-input"
+            contenteditable="true"
+            bind:textContent={fieldValue}
+            role="textbox"
+            tabindex="0"
+          ></div>
         </div>
       </div>
       <div class="editor-footer">
@@ -551,6 +616,52 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.1rem 0;
+  }
+
+  .footer-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-page {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: #4a9eff;
+    border: 1px solid #4a9eff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 1px 3px;
+  }
+
+  .btn-page:hover:not(:disabled) {
+    background: #4a9eff;
+    color: white;
+  }
+
+  .btn-page:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: #666;
+    border-color: #666;
+  }
+
+  .page-info {
+    font-size: 0.7rem;
+    color: #aaa;
+    min-width: 60px;
+    text-align: center;
   }
 
   .fields-count {
@@ -721,6 +832,11 @@
     gap: 0.5rem;
   }
 
+  .input-group:last-of-type {
+    flex: 1;
+    min-height: 0;
+  }
+
   .input-group label {
     font-size: 0.75rem;
     color: #888;
@@ -745,7 +861,7 @@
 
   .field-value-input {
     flex: 1;
-    min-height: 300px;
+    min-height: 0;
     padding: 0.75rem;
     background: #2a2a2a;
     color: #e0e0e0;
@@ -754,12 +870,38 @@
     font-family: "Monaco", "Menlo", monospace;
     font-size: 13px;
     line-height: 1.6;
-    resize: vertical;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* Custom scrollbar for contenteditable */
+  .field-value-input::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .field-value-input::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .field-value-input::-webkit-scrollbar-thumb {
+    background: #111;
+    border-radius: 3px;
+  }
+
+  .field-value-input::-webkit-scrollbar-thumb:hover {
+    background: #000;
   }
 
   .field-value-input:focus {
     outline: none;
     border-color: #4a9eff;
+  }
+
+  .field-value-input:empty:before {
+    content: attr(placeholder);
+    color: #666;
   }
 
   .editor-footer {
