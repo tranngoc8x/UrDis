@@ -36,6 +36,25 @@
   let currentCursor = $state(0);
   let isScanning = $state(true);
 
+  // Multi-select & Context Menu
+  /** @type {string[]} */
+  let selectedKeys = $state([]); // Array of strings
+  let lastSelectedKey = $state("");
+  let showContextMenu = $state(false);
+  let contextMenuKey = $state(""); // The key right-clicked on
+  let contextMenuPosition = $state({ x: 0, y: 0 });
+
+  // Confirmation Dialog
+  let showConfirmDialog = $state(false);
+  let confirmDialogMessage = $state("");
+  let confirmDialogCallback = $state(() => {});
+
+  // TTL Dialog
+  let showTTLDialog = $state(false);
+  let ttlValue = $state(0);
+  let ttlUnit = $state("seconds"); // seconds, minutes, hours, days, weeks, months, years
+  let ttlTargetKey = $state("");
+
   let editableContent = $state("");
   let originalContent = $state("");
   let isModified = $derived(editableContent !== originalContent);
@@ -102,6 +121,17 @@
   const dbOptions = Array.from({ length: 16 }, (_, i) => i);
 
   onMount(() => {
+    console.log("[UrDis] Component mounted. isScanning:", isScanning);
+
+    // Global click diagnostic
+    window.addEventListener(
+      "mousedown",
+      (e) => {
+        console.log("[UrDis] Global Mousedown:", e.target);
+      },
+      true
+    );
+
     if (!$activeConfig) {
       goto("/login");
     } else {
@@ -248,9 +278,117 @@
     isAddKeyDropdownOpen = false;
   }
 
-  /** @param {string} key */
-  async function selectKey(key) {
-    if (selectedKey === key) return;
+  // Flatten tree to get a list of paths in display order for Shift-selection
+  function getFlattenedNodes(nodes, parentPath = "") {
+    let flat = [];
+    nodes.forEach((node) => {
+      const currentPath = parentPath ? `${parentPath}:${node.name}` : node.name;
+
+      if (node.type === "key") {
+        flat.push(node.fullPath);
+      } else if (node.type === "folder") {
+        // Even if folder isn't "selectable" as a key, it's a row in the tree
+        // But for Redis keys selection, we usually only care about keys.
+        if (expandedFolders.has(currentPath) && node.children) {
+          flat = [...flat, ...getFlattenedNodes(node.children, currentPath)];
+        }
+      }
+    });
+    return flat;
+  }
+
+  /**
+   * @param {string} key
+   * @param {MouseEvent|null} event
+   */
+  async function selectKey(key, event = null) {
+    console.log(
+      `[selectKey] >>> CLICK DETECTED for key: ${key}, button: ${event?.button}, ctrl: ${event?.ctrlKey}, meta: ${event?.metaKey}, shift: ${event?.shiftKey}`
+    );
+
+    // Handle Right Click (button 2)
+    if (event && event.button === 2) {
+      const alreadySelected = selectedKeys.some((k) => k === key);
+      if (alreadySelected) {
+        console.log(
+          `[selectKey] Right-click on ALREADY SELECTED item: ${key}. Keeping selection.`
+        );
+        lastSelectedKey = key;
+      } else {
+        console.log(
+          `[selectKey] Right-click on UNSELECTED item: ${key}. Selecting single.`
+        );
+        selectedKeys = [key];
+        lastSelectedKey = key;
+      }
+    } else {
+      // Handle Multi-select (Left Click)
+      if (event && (event.ctrlKey || event.metaKey)) {
+        if (selectedKeys.includes(key)) {
+          selectedKeys = selectedKeys.filter((k) => k !== key);
+          console.log(
+            `[selectKey] Removed key: ${key}. New selectedKeys: ${selectedKeys.length}`
+          );
+        } else {
+          selectedKeys = [...selectedKeys, key];
+          console.log(
+            `[selectKey] Added key: ${key}. New selectedKeys: ${selectedKeys.length}`
+          );
+        }
+      } else if (event && event.shiftKey && lastSelectedKey) {
+        // Real Range selection
+        console.log(
+          `[selectKey] Shift-click detected. Last selected: ${lastSelectedKey}`
+        );
+        const flatKeys = getFlattenedNodes(keyTree);
+        const startIdx = flatKeys.indexOf(lastSelectedKey);
+        const endIdx = flatKeys.indexOf(key);
+
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [min, max] =
+            startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+          const range = flatKeys.slice(min, max + 1);
+
+          selectedKeys = range;
+          console.log(
+            `[selectKey] Range selected. New selectedKeys: ${selectedKeys.length}`
+          );
+        } else {
+          selectedKeys = [key];
+          console.log(
+            `[selectKey] Shift-click, but range invalid. Selected single key: ${key}`
+          );
+        }
+      } else {
+        selectedKeys = [key];
+        console.log(`[selectKey] Single key selected: ${key}`);
+      }
+      lastSelectedKey = key;
+    }
+
+    // Load value if exactly one key is selected
+    if (selectedKeys.length === 1) {
+      const targetKey = selectedKeys[0];
+      if (selectedKey === targetKey) return;
+      selectedKey = targetKey;
+      console.log(
+        `[selectKey] Loading value for single selected key: ${selectedKey}`
+      );
+    } else {
+      selectedKey = "";
+      // Reset keyValue to avoid showing old data
+      keyValue = {
+        key_type: null,
+        value: null,
+        ttl: -1,
+        memory: 0,
+        encoding: "",
+      };
+      console.log(
+        `[selectKey] Multiple keys selected or no key. Resetting value view.`
+      );
+      return;
+    }
 
     // Performance: Clear editor immediately before any async work
     if (editorNode) editorNode.innerHTML = "";
@@ -269,6 +407,7 @@
         ...entry,
         ttl: entry.ttl > 0 ? Math.max(0, entry.ttl - elapsed) : entry.ttl,
       };
+      console.log(`[selectKey] Value loaded from cache for ${key}`);
     } else {
       // Clear current value to show loading state
       keyValue = {
@@ -284,6 +423,7 @@
       valueLoadingTimeout = setTimeout(() => {
         isLoadingValue = true;
       }, 100);
+      console.log(`[selectKey] Fetching value for ${key}...`);
 
       try {
         const config = $activeConfig;
@@ -304,6 +444,11 @@
             ...result,
             ttl: result.ttl,
           };
+          console.log(`[selectKey] Value fetched and updated for ${key}`);
+        } else {
+          console.log(
+            `[selectKey] Value fetched for ${key}, but selectedKey changed to ${selectedKey}. Discarding.`
+          );
         }
       } catch (error) {
         console.error("Failed to get key value:", error);
@@ -355,15 +500,6 @@
     return () => clearInterval(interval);
   });
 
-  /** @param {any} event */
-  function handleInput(event) {
-    // Extract plain text while maintaining logical lines (divs)
-    // textContent is faster and safer than innerText but doesn't preserve line breaks from divs well.
-    // However, innerText is the one that forces reflow.
-    // For large buffers, we might need a more optimized way.
-    editableContent = event.target.innerText.replace(/\n$/, "");
-  }
-
   async function saveValue() {
     if (!isModified) return;
 
@@ -397,6 +533,213 @@
     } finally {
       isLoadingValue = false;
     }
+  }
+
+  // Context Menu Actions
+  function showKeyContextMenu(event, key) {
+    event.preventDefault();
+    // If key not in selection, select only this key
+    const alreadySelected = selectedKeys.some((k) => k === key);
+    if (!alreadySelected) {
+      console.log(
+        `[showKeyContextMenu] Key ${key} not in selection. Resetting to single.`
+      );
+      selectedKeys = [key];
+      selectedKey = key;
+    }
+    contextMenuKey = key;
+    contextMenuPosition = { x: event.clientX, y: event.clientY };
+    showContextMenu = true;
+  }
+
+  function closeContextMenu() {
+    showContextMenu = false;
+  }
+
+  async function copySelectedKeyNames(single = false) {
+    let names = "";
+    if (single && contextMenuKey) {
+      names = contextMenuKey;
+    } else {
+      names = Array.from(selectedKeys).join("\n");
+    }
+
+    if (names) {
+      try {
+        await navigator.clipboard.writeText(names);
+        console.log(
+          `[ContextMenu] Copied ${single ? "single" : selectedKeys.length} key(s)`
+        );
+      } catch (err) {
+        console.error("Clipboard error:", err);
+      }
+    }
+    closeContextMenu();
+  }
+
+  async function copyKeyAsJSON() {
+    const key = contextMenuKey || selectedKey;
+    if (!key) {
+      closeContextMenu();
+      return;
+    }
+
+    try {
+      const config = $activeConfig;
+      if (!config) return;
+
+      // Get key value
+      const result = await invoke("get_key_value", {
+        config,
+        db: selectedDb,
+        key,
+      });
+
+      // Build JSON object
+      const jsonObject = { [key]: result.value };
+      const jsonString = JSON.stringify(jsonObject, null, 2);
+
+      await navigator.clipboard.writeText(jsonString);
+      console.log(
+        "[ContextMenu] Copied key as JSON:",
+        jsonString.substring(0, 200)
+      );
+    } catch (err) {
+      console.error("Failed to copy as JSON:", err);
+      alert("Failed to copy as JSON: " + err);
+    }
+    closeContextMenu();
+  }
+
+  function confirmDeleteSelectedKeys() {
+    const count = selectedKeys.length;
+    const message =
+      count === 1
+        ? `Delete key "${selectedKeys[0]}"?`
+        : `Delete ${count} selected keys?`;
+    showConfirm(message, async () => {
+      try {
+        isLoadingValue = true;
+        const keysToDelete = [...selectedKeys]; // Use spread to ensure a new array for the Set conversion
+        const config = $activeConfig;
+        if (!config) return;
+
+        await invoke("delete_keys", {
+          config,
+          db: selectedDb,
+          keys: keysToDelete,
+        });
+
+        // Update UI
+        const toDeleteSet = new Set(keysToDelete);
+        keysList = keysList.filter((k) => !toDeleteSet.has(k.name));
+        allKeys = allKeys.filter((k) => !toDeleteSet.has(k.name));
+        selectedKeys = [];
+        selectedKey = "";
+
+        // Trigger tree rebuild
+        keysList = [...keysList];
+      } catch (error) {
+        console.error("Failed to delete keys:", error);
+        alert("Failed to delete keys: " + error);
+      } finally {
+        isLoadingValue = false;
+      }
+    });
+    closeContextMenu();
+  }
+
+  // Confirm dialog helpers (mirrored from HashEditor)
+  function showConfirm(message, callback) {
+    confirmDialogMessage = message;
+    confirmDialogCallback = callback;
+    showConfirmDialog = true;
+  }
+
+  function handleConfirmYes() {
+    showConfirmDialog = false;
+    if (confirmDialogCallback) confirmDialogCallback();
+  }
+
+  function handleConfirmNo() {
+    showConfirmDialog = false;
+  }
+
+  // TTL Dialog helpers
+  function openTTLDialog(key) {
+    ttlTargetKey = key;
+    ttlValue = 0;
+    ttlUnit = "seconds";
+    showTTLDialog = true;
+    closeContextMenu();
+  }
+
+  function closeTTLDialog() {
+    showTTLDialog = false;
+    ttlTargetKey = "";
+  }
+
+  async function saveTTL() {
+    if (!ttlTargetKey || ttlValue <= 0) {
+      closeTTLDialog();
+      return;
+    }
+
+    // Convert to seconds
+    let seconds = ttlValue;
+    switch (ttlUnit) {
+      case "minutes":
+        seconds = ttlValue * 60;
+        break;
+      case "hours":
+        seconds = ttlValue * 3600;
+        break;
+      case "days":
+        seconds = ttlValue * 86400;
+        break;
+      case "weeks":
+        seconds = ttlValue * 604800;
+        break;
+      case "months":
+        seconds = ttlValue * 2592000;
+        break; // 30 days
+      case "years":
+        seconds = ttlValue * 31536000;
+        break; // 365 days
+    }
+
+    try {
+      const config = $activeConfig;
+      if (!config) return;
+
+      await invoke("set_key_ttl", {
+        config,
+        db: selectedDb,
+        key: ttlTargetKey,
+        ttl: seconds,
+      });
+
+      console.log(`[TTL] Set TTL for ${ttlTargetKey} to ${seconds} seconds`);
+
+      // Refresh key value if it's the selected key
+      if (ttlTargetKey === selectedKey) {
+        await selectKey(selectedKey);
+      }
+    } catch (error) {
+      console.error("Failed to set TTL:", error);
+      alert("Failed to set TTL: " + error);
+    } finally {
+      closeTTLDialog();
+    }
+  }
+
+  /** @param {any} event */
+  function handleInput(event) {
+    // Extract plain text while maintaining logical lines (divs)
+    // textContent is faster and safer than innerText but doesn't preserve line breaks from divs well.
+    // However, innerText is the one that forces reflow.
+    // For large buffers, we might need a more optimized way.
+    editableContent = event.target.innerText.replace(/\n$/, "");
   }
 
   // Formatting helpers for metadata
@@ -477,12 +820,16 @@
 
   /** @param {string} folderPath */
   function toggleFolder(folderPath) {
+    console.log(`[toggleFolder] >>> FOLDER CLICK: ${folderPath}`);
     if (expandedFolders.has(folderPath)) {
       expandedFolders.delete(folderPath);
     } else {
       expandedFolders.add(folderPath);
     }
     expandedFolders = new Set(expandedFolders);
+    console.log(
+      `[toggleFolder] New state for ${folderPath}: ${expandedFolders.has(folderPath)}`
+    );
   }
 
   /** @param {Event} event */
@@ -498,6 +845,9 @@
       isDropdownOpen = false;
     if (addDropdown && !addDropdown.contains(event.target))
       isAddKeyDropdownOpen = false;
+
+    // Close context menu on click outside
+    showContextMenu = false;
   }
 
   onMount(() => {
@@ -522,10 +872,10 @@
   $effect(() => {
     if (activePattern.trim() && filteredKeys.length > 0) {
       const timeout = setTimeout(() => {
-        expandedFolders = new Set([
-          ...expandedFolders,
-          ...treeResult.pathsToExpand,
-        ]);
+        treeResult.pathsToExpand.forEach((path) => {
+          expandedFolders.add(path);
+        });
+        expandedFolders = new Set(expandedFolders);
       }, 100);
       return () => clearTimeout(timeout);
     }
@@ -539,7 +889,10 @@
       {#if node.type === "folder"}
         <button
           class="tree-item folder"
-          onclick={() => toggleFolder(currentPath)}
+          onmousedown={(e) => {
+            console.log("[snippet] Folder mousedown:", currentPath);
+            toggleFolder(currentPath);
+          }}
         >
           <span class="tree-tag tag-dir">DIR</span>
           <span class="name">{node.name}</span>
@@ -553,8 +906,23 @@
       {:else}
         <button
           class="tree-item key"
-          class:selected={selectedKey === node.fullPath}
-          onclick={() => selectKey(node.fullPath)}
+          class:selected={selectedKeys.includes(node.fullPath)}
+          onmousedown={(e) => {
+            if (e.button === 1) return; // Ignore middle click
+            console.log(
+              "[snippet] Item mousedown:",
+              node.fullPath,
+              "button:",
+              e.button
+            );
+            e.stopPropagation();
+            selectKey(node.fullPath, e);
+          }}
+          oncontextmenu={(e) => {
+            console.log("[snippet] ContextMenu triggered:", node.fullPath);
+            e.stopPropagation();
+            showKeyContextMenu(e, node.fullPath);
+          }}
         >
           <span class="tree-tag tag-{(node.key_type || 'key').toLowerCase()}"
             >{(node.key_type || "KEY").toUpperCase()}</span
@@ -572,6 +940,12 @@
       <!-- <div class="header-top">
         <h3>Keys ({filteredKeys.length})</h3>
       </div> -->
+      <div class="footer-info">
+        <span>{filteredKeys.length} keys</span>
+        {#if selectedKeys.length > 0}
+          <span class="selection-count">| {selectedKeys.length} selected</span>
+        {/if}
+      </div>
       <div class="search-row">
         <div class="search-box">
           <input
@@ -673,7 +1047,11 @@
       </div>
     </div>
 
-    <div class="keys-list" class:scanning={isScanning} use:simplebar>
+    <div
+      class="keys-list"
+      class:scanning={isScanning}
+      style="overflow-y: auto;"
+    >
       {@render renderTree(keyTree)}
     </div>
 
@@ -775,13 +1153,11 @@
         </div>
       </div>
       {#if keyValue.key_type === "hash"}
-        <div class="hash-container">
-          <HashEditor
-            {selectedKey}
-            {selectedDb}
-            on:refresh={() => selectKey(selectedKey)}
-          />
-        </div>
+        <HashEditor
+          {selectedKey}
+          {selectedDb}
+          on:refresh={() => selectKey(selectedKey)}
+        />
       {:else}
         <div class="value-content" use:simplebar data-simplebar>
           {#if keyValue?.value !== null}
@@ -799,12 +1175,409 @@
       {/if}
     {:else}
       <div class="placeholder-text">
-        Select a key from the sidebar to view its value
+        {selectedKeys.length > 1
+          ? `${selectedKeys.length} keys selected. Right-click for actions.`
+          : "Select a key from the sidebar to view its value"}
       </div>
     {/if}
   </main>
 </div>
 
+<!-- Context Menu: Single Key -->
+{#if showContextMenu && selectedKeys.length === 1}
+  <div
+    class="context-menu-overlay"
+    onclick={closeContextMenu}
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <div
+      class="context-menu"
+      style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <div class="context-menu-item" onclick={() => copySelectedKeyNames(true)}>
+        <i class="codicon codicon-copy"></i>
+        <span>Copy Key Name</span>
+      </div>
+      <div class="context-menu-item" onclick={copyKeyAsJSON}>
+        <i class="codicon codicon-json"></i>
+        <span>Copy as JSON</span>
+      </div>
+      <div
+        class="context-menu-item"
+        onclick={() => openTTLDialog(contextMenuKey)}
+      >
+        <i class="codicon codicon-clock"></i>
+        <span>Set TTL</span>
+      </div>
+      <div class="context-menu-separator"></div>
+      <div
+        class="context-menu-item danger"
+        onclick={() => {
+          confirmDeleteSelectedKeys();
+        }}
+      >
+        <i class="codicon codicon-trash"></i>
+        <span>Delete Key</span>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Context Menu: Multiple Keys -->
+{#if showContextMenu && selectedKeys.length > 1}
+  <div
+    class="context-menu-overlay"
+    onclick={closeContextMenu}
+    oncontextmenu={(e) => e.preventDefault()}
+  >
+    <div
+      class="context-menu"
+      style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <div class="context-menu-group-label">
+        {selectedKeys.length} Keys Selected
+      </div>
+      <div
+        class="context-menu-item"
+        onclick={() => copySelectedKeyNames(false)}
+      >
+        <i class="codicon codicon-copy"></i>
+        <span>Copy All Names</span>
+      </div>
+      <div class="context-menu-separator"></div>
+      <div class="context-menu-item danger" onclick={confirmDeleteSelectedKeys}>
+        <i class="codicon codicon-trash"></i>
+        <span>Delete All Keys</span>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Confirm Dialog -->
+{#if showConfirmDialog}
+  <div class="confirm-dialog-overlay" onclick={handleConfirmNo}>
+    <div class="confirm-dialog" onclick={(e) => e.stopPropagation()}>
+      <div class="confirm-dialog-message">{confirmDialogMessage}</div>
+      <div class="confirm-dialog-buttons">
+        <button class="btn-confirm-no" onclick={handleConfirmNo}>Cancel</button>
+        <button class="btn-confirm-yes" onclick={handleConfirmYes}
+          >Delete</button
+        >
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- TTL Dialog -->
+{#if showTTLDialog}
+  <div class="ttl-dialog-overlay" onclick={closeTTLDialog}>
+    <div class="ttl-dialog" onclick={(e) => e.stopPropagation()}>
+      <div class="ttl-dialog-header">
+        <h3>Set TTL</h3>
+        <span class="ttl-dialog-key">{ttlTargetKey}</span>
+      </div>
+      <div class="ttl-dialog-body">
+        <div class="ttl-input-group">
+          <input
+            type="number"
+            min="1"
+            bind:value={ttlValue}
+            placeholder="Enter value"
+            class="ttl-input"
+          />
+          <select bind:value={ttlUnit} class="ttl-select">
+            <option value="seconds">Seconds</option>
+            <option value="minutes">Minutes</option>
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Months</option>
+            <option value="years">Years</option>
+          </select>
+        </div>
+      </div>
+      <div class="ttl-dialog-footer">
+        <button class="btn-ttl-cancel" onclick={closeTTLDialog}>Cancel</button>
+        <button class="btn-ttl-save" onclick={saveTTL}>Save</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style lang="scss">
   @import "../../styles/explorer.scss";
+
+  /* Context Menu Styles */
+  .context-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 10000;
+    background: transparent;
+  }
+
+  .context-menu {
+    position: fixed;
+    background: #252526;
+    border: 1px solid #454545;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    padding: 4px 0;
+    min-width: 180px;
+    z-index: 10001;
+    animation: contextMenuFade 0.1s ease-out;
+  }
+
+  .context-menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: #cccccc;
+
+    &:hover {
+      background: #094771;
+      color: #ffffff;
+    }
+
+    &.danger {
+      color: #ff5555;
+      &:hover {
+        background: #902727;
+      }
+    }
+  }
+
+  .context-menu-group-label {
+    padding: 6px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #666666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .context-menu-separator {
+    height: 1px;
+    background: #454545;
+    margin: 4px 0;
+  }
+
+  /* Confirm Dialog Styles */
+  .confirm-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20000;
+    backdrop-filter: blur(2px);
+  }
+
+  .confirm-dialog {
+    background: #252526;
+    border: 1px solid #454545;
+    border-radius: 8px;
+    padding: 1.5rem;
+    min-width: 320px;
+    max-width: 450px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    animation: dialogScale 0.2s cubic-bezier(0.17, 0.67, 0.83, 0.67);
+  }
+
+  .confirm-dialog-message {
+    color: #cccccc;
+    font-size: 0.95rem;
+    margin-bottom: 2rem;
+    line-height: 1.5;
+    text-align: center;
+    word-break: break-all;
+  }
+
+  .confirm-dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  .btn-confirm-no,
+  .btn-confirm-yes {
+    padding: 0.5rem 1.25rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-confirm-no {
+    background: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #454545;
+
+    &:hover {
+      background: #4c4c4c;
+    }
+  }
+
+  .btn-confirm-yes {
+    background: #e53935;
+    color: white;
+    border: 1px solid #b71c1c;
+
+    &:hover {
+      background: #f44336;
+    }
+  }
+
+  @keyframes contextMenuFade {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes dialogScale {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* TTL Dialog Styles */
+  .ttl-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
+  }
+
+  .ttl-dialog {
+    background: #252526;
+    border: 1px solid #454545;
+    border-radius: 8px;
+    min-width: 320px;
+    max-width: 400px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    animation: dialogScale 0.2s ease-out;
+  }
+
+  .ttl-dialog-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #333;
+
+    h3 {
+      margin: 0 0 0.25rem 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .ttl-dialog-key {
+      font-size: 0.8rem;
+      color: #888;
+      font-family: monospace;
+      word-break: break-all;
+    }
+  }
+
+  .ttl-dialog-body {
+    padding: 1.25rem;
+  }
+
+  .ttl-input-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .ttl-input {
+    flex: 1;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #454545;
+    border-radius: 4px;
+    background: #1e1e1e;
+    color: #cccccc;
+    font-size: 0.9rem;
+
+    &:focus {
+      outline: none;
+      border-color: #007acc;
+    }
+  }
+
+  .ttl-select {
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #454545;
+    border-radius: 4px;
+    background: #1e1e1e;
+    color: #cccccc;
+    font-size: 0.9rem;
+    cursor: pointer;
+
+    &:focus {
+      outline: none;
+      border-color: #007acc;
+    }
+  }
+
+  .ttl-dialog-footer {
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .btn-ttl-cancel,
+  .btn-ttl-save {
+    padding: 0.5rem 1.25rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-ttl-cancel {
+    background: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #454545;
+
+    &:hover {
+      background: #4c4c4c;
+    }
+  }
+
+  .btn-ttl-save {
+    background: #0e639c;
+    color: white;
+    border: 1px solid #0d5689;
+
+    &:hover {
+      background: #1177bb;
+    }
+  }
 </style>

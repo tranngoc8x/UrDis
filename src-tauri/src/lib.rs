@@ -118,6 +118,56 @@ async fn connect_redis(
     }
 }
 
+#[tauri::command]
+async fn get_redis_version(
+    config: RedisConfig,
+    state: State<'_, ConnectionManager>,
+) -> Result<String, String> {
+    let mut con = state.get_connection(&config, 0).await?;
+
+    let info: String = redis::cmd("INFO")
+        .arg("server")
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("INFO error: {}", e))?;
+
+    // Parse redis_version from INFO output
+    for line in info.lines() {
+        if line.starts_with("redis_version:") {
+            return Ok(line.trim_start_matches("redis_version:").to_string());
+        }
+    }
+
+    Err("Could not determine Redis version".to_string())
+}
+
+#[tauri::command]
+async fn hash_set_field_ttl(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    fields: Vec<String>,
+    ttl: i64,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    // HEXPIRE key seconds FIELDS count field1 field2 ...
+    let mut cmd = redis::cmd("HEXPIRE");
+    cmd.arg(&key).arg(ttl).arg("FIELDS").arg(fields.len());
+
+    for field in &fields {
+        cmd.arg(field);
+    }
+
+    let _: Vec<i64> = cmd
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("HEXPIRE error: {}", e))?;
+
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct RedisKeyInfo {
     pub name: String,
@@ -588,6 +638,48 @@ async fn hash_delete_field(
     Ok(())
 }
 
+#[tauri::command]
+async fn delete_keys(
+    config: RedisConfig,
+    db: i64,
+    keys: Vec<String>,
+    state: State<'_, ConnectionManager>,
+) -> Result<i64, String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    if keys.is_empty() {
+        return Ok(0);
+    }
+
+    let deleted_count: i64 = redis::cmd("DEL")
+        .arg(&keys)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("DEL error: {}", e))?;
+
+    Ok(deleted_count)
+}
+
+#[tauri::command]
+async fn set_key_ttl(
+    config: RedisConfig,
+    db: i64,
+    key: String,
+    ttl: i64,
+    state: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    let mut con = state.get_connection(&config, db).await?;
+
+    let _: () = redis::cmd("EXPIRE")
+        .arg(&key)
+        .arg(ttl)
+        .query_async(&mut con)
+        .await
+        .map_err(|e| format!("EXPIRE error: {}", e))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -596,6 +688,7 @@ pub fn run() {
         .manage(ConnectionManager::default())
         .invoke_handler(tauri::generate_handler![
             connect_redis,
+            get_redis_version,
             list_keys,
             get_key_value,
             get_batch_key_values,
@@ -607,6 +700,9 @@ pub fn run() {
             hash_add_field,
             hash_rename_field,
             hash_delete_field,
+            hash_set_field_ttl,
+            delete_keys,
+            set_key_ttl,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

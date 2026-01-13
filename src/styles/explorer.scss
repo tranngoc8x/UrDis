@@ -453,8 +453,8 @@ $border-color: #333;
   @extend %custom-scrollbar;
 
   &.scanning {
-    opacity: 0.5;
-    pointer-events: none;
+    opacity: 0.6;
+    /* pointer-events: none; - REMOVED for debugging click issues */
   }
 }
 
